@@ -27,7 +27,7 @@ Mappings worth knowing:
 - Odoo has no native signed webhooks, so ``verify_webhook`` always refuses:
   nothing unverified is ever accepted. Catalog and stock updates arrive through
   the scheduled syncs; a merchant wanting pushes can front
-  ``field_sales.api.webhooks.receive`` with a signing proxy later.
+  ``field_sales_odoo.api.webhooks.receive`` with a signing proxy later.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import frappe
 import requests
 from frappe import _
 
-from field_sales.connectors.base import (
+from field_sales_odoo.connectors.base import (
 	ORDER_CANCELLED_TOPIC,
 	ORDER_FULFILLED_TOPIC,
 	ORDER_PAID_TOPIC,

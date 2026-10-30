@@ -8,9 +8,9 @@ building, draft mapping). No network: the JSON-RPC layer is stubbed."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
-import field_sales_odoo.connector as connector_module
-from field_sales.connectors.base import ConnectorError
-from field_sales_odoo.connector import (
+import field_sales_odoo.connectors.odoo as connector_module
+from field_sales_odoo.connectors.base import ConnectorError
+from field_sales_odoo.connectors.odoo import (
 	DONE_STATES,
 	STOCK_LOCATION_ID,
 	OdooConnector,
