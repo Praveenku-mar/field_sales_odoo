@@ -1,0 +1,18 @@
+[project]
+name = "field_sales_odoo"
+authors = [
+    { name = "Agamnxt Technologies", email = "praveenkumar@agamnxt.com"}
+]
+description = "Odoo Connector for Field Sales"
+requires-python = ">=3.14"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = []
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.ruff]
+line-length = 110
+target-version = "py314"
