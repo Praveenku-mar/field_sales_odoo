@@ -17,6 +17,14 @@ add_to_apps_screen = [
 	}
 ]
 
+# Serve the Vue app shell for its deep links (/fieldsales/orders, a refresh on any page)
+# and the short alias /fs.
+website_route_rules = [
+	{"from_route": "/fieldsales/<path:app_path>", "to_route": "fieldsales"},
+	{"from_route": "/fs", "to_route": "fieldsales"},
+	{"from_route": "/fs/<path:app_path>", "to_route": "fieldsales"},
+]
+
 permission_query_conditions = {
 	"Visit": "field_sales_odoo.permissions.visit_query",
 	"Sales Rep": "field_sales_odoo.permissions.sales_rep_query",
