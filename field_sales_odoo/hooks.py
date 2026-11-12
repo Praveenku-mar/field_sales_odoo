@@ -1,7 +1,7 @@
 app_name = "field_sales_odoo"
-app_title = "Field Sales Odoo"
+app_title = "Agamsale"
 app_publisher = "Agamnxt Technologies"
-app_description = "Field Sales app dedicated to Odoo stores"
+app_description = "Agamsale app dedicated to Odoo stores"
 app_email = "praveenkumar@agamnxt.com"
 app_license = "mit"
 
@@ -10,8 +10,8 @@ use_json_request_body = True
 add_to_apps_screen = [
 	{
 		"name": "field_sales_odoo",
-		"logo": "/assets/field_sales_odoo/images/logo.svg",
-		"title": "Field Sales",
+		"logo": "/assets/field_sales_odoo/images/agamsale-logo.png",
+		"title": "Agamsale",
 		"route": "/fieldsales",
 		"has_permission": "field_sales_odoo.www.fieldsales.has_app_access",
 	}
