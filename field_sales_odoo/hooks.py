@@ -46,3 +46,8 @@ has_permission = {
 fixtures = [
 	{"dt": "Print Format", "filters": [["name", "in", ["Field Sales Order", "Field Sales Invoice"]]]},
 ]
+
+doc_events = {
+	# Push bell notifications made by push.notify.notify_users to the mobile app.
+	"Notification Log": {"after_insert": "field_sales_odoo.push.notify.on_notification_log_insert"},
+}
