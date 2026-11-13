@@ -550,6 +550,16 @@ class OdooConnector(BaseConnector):
 		rows = self._read_orders(draft_ids, ["id", "state"], "Other")
 		return {str(r["id"]): str(r["id"]) for r in rows if r["state"] in DONE_STATES}
 
+	def delete_draft(self, draft_id: str, field_order=None) -> str | None:
+		"""
+		Nothing is removed in Odoo: a quotation is cancelled there, by someone with Odoo access.
+
+		The quotation is the ``sale.order`` it later becomes (same id), so its id is returned as
+		the order to check: ``FieldOrder.before_cancel`` then refuses until Odoo shows it
+		cancelled (or it is gone), exactly as for a confirmed order.
+		"""
+		return str(draft_id) if draft_id else None
+
 	def _read_orders(self, draft_ids: list, fields: list, operation: str) -> list[dict]:
 		ids = [int(i) for i in draft_ids if str(i).isdigit()]
 		if not ids:
