@@ -1,18 +1,14 @@
 <template>
-  <!-- The signed-in user, with Switch to Desk and Log out. Sidebar footer on desktop;
-       `collapsed` (sidebar collapsed, or the phone top bar) shows the avatar only. -->
-  <Dropdown :options="options" side="top" align="start" :match-trigger-width="!collapsed">
+  <!-- Odoo's user menu at the right of the navbar: the avatar (and name on wide screens),
+       with Switch to Desk and Log out. -->
+  <Dropdown :options="options" side="bottom" align="end">
     <button
       type="button"
-      class="flex h-9 items-center gap-2 rounded-4 px-1 text-left hover:bg-surface-gray-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-      :class="collapsed ? 'w-auto' : 'w-full'"
+      class="flex h-full items-center gap-2 px-2 text-left text-[14px] text-odoo-text hover:bg-odoo-hover focus:outline-none focus-visible:bg-odoo-hover"
       :aria-label="`Account: ${session.fullName}`"
     >
-      <Avatar :label="session.fullName" :image="session.userImage" size="md" />
-      <template v-if="!collapsed">
-        <span class="min-w-0 flex-1 truncate text-base font-medium text-ink-gray-8">{{ session.fullName }}</span>
-        <span class="lucide-chevron-up size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
-      </template>
+      <Avatar :label="session.fullName" :image="session.userImage" size="sm" />
+      <span class="hidden max-w-40 truncate lg:inline">{{ session.fullName }}</span>
     </button>
   </Dropdown>
 
@@ -28,10 +24,6 @@ import { computed, ref } from 'vue'
 import { Avatar, Dialog, Dropdown } from 'frappe-ui'
 import { useInstallPrompt } from '@/composables/useInstallPrompt'
 import { useSessionStore } from '@/stores/session'
-
-defineProps({
-  collapsed: { type: Boolean, default: false },
-})
 
 const session = useSessionStore()
 const { canInstall, showIosHint, install } = useInstallPrompt()

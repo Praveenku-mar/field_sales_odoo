@@ -5,12 +5,22 @@ export default {
   content: ['./index.html', './src/**/*.{vue,js,ts}', ...frappeUIContent],
   theme: {
     extend: {
-      // Frappe desk look: page background, card borders, 8px corners.
+      // Odoo 17/18 look: page background and borders (src/theme/odoo.css has the rest).
       colors: {
-        desk: { bg: '#F4F5F6', border: '#EDEDED' },
+        desk: { bg: '#F9FAFB', border: '#D8DADD' },
+        odoo: {
+          primary: '#714B67',
+          'primary-dark': '#5C3D54',
+          action: '#017E84',
+          'action-dark': '#01585C',
+          text: '#374151',
+          strong: '#111827',
+          muted: '#5F636F',
+          hover: '#E7E9ED',
+          line: '#D8DADD',
+        },
       },
-      width: { sidebar: '224px' },
-      height: { topbar: '48px' },
+      height: { topbar: '46px' },
     },
   },
 }
