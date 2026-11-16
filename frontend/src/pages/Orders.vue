@@ -1,26 +1,25 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Field Orders">
+    <PageHeader title="Field Orders" :pager="pager" flush>
       <template #actions>
         <Button label="New Order" icon-left="lucide-plus" variant="solid" @click="newOrderOpen = true" />
       </template>
+      <template #search>
+        <ListFilters v-model="model" search-placeholder="Search order or retailer" :tabs="tabs" :fields="filterFields">
+          <PresetChip :label="presetLabel" />
+        </ListFilters>
+      </template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search order or retailer" :tabs="tabs" :fields="filterFields">
-        <PresetChip :label="presetLabel" />
-      </ListFilters>
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'Order', params: { name: row.name } })"
         empty-icon="lucide-shopping-cart"
         empty-title="No orders found"
-        @load-more="list.next()"
       >
         <template #cell-name="{ row }">
           <div class="font-medium text-ink-gray-9">{{ row.retailer_name }}</div>
@@ -36,7 +35,6 @@
           <span v-else class="text-ink-gray-4">—</span>
         </template>
       </DataTable>
-    </div>
     <NewOrderDialog v-model="newOrderOpen" />
   </div>
 </template>
@@ -65,14 +63,14 @@ const tabs = [
   { label: 'Failed', value: 'failed' },
 ]
 const columns = [
-  { key: 'name', label: 'Order' },
+  { key: 'name', label: 'Order', sortField: 'name' },
   { key: 'sales_rep_name', label: 'Sales Rep' },
-  { key: 'location_name', label: 'Location' },
-  { key: 'order_date', label: 'Date', format: formatDate },
-  { key: 'total_qty', label: 'Units', align: 'right', format: (v) => formatNumber(v) },
-  { key: 'grand_total', label: 'Total', align: 'right', format: (v) => formatCurrency(v) },
-  { key: 'sync_status', label: 'Status' },
-  { key: 'payment_status', label: 'Payment' },
+  { key: 'location_name', label: 'Location', sortField: 'location_name' },
+  { key: 'order_date', label: 'Date', sortField: 'order_date', format: formatDate },
+  { key: 'total_qty', label: 'Units', sortField: 'total_qty', sum: true, align: 'right', format: (v) => formatNumber(v) },
+  { key: 'grand_total', label: 'Total', sortField: 'grand_total', sum: true, align: 'right', format: (v) => formatCurrency(v) },
+  { key: 'sync_status', label: 'Status', sortField: 'sync_status' },
+  { key: 'payment_status', label: 'Payment', sortField: 'payment_status' },
 ]
 
 function buildFilters(m) {
@@ -107,7 +105,7 @@ const filterFields = computed(() => [
 ])
 
 const route = useRoute()
-const { model, list, count, presetLabel, pageSize } = useDocList({
+const { model, list, count, presetLabel, pageSize, pager, sort } = useDocList({
   doctype: 'Field Order',
   fields: ['name', 'retailer_name', 'sales_rep', 'sales_rep.full_name as sales_rep_name', 'order_date', 'location_id', 'location_name', 'total_qty', 'grand_total', 'docstatus', 'sync_status', 'sync_error', 'payment_status'],
   orderBy: 'order_date desc, creation desc',

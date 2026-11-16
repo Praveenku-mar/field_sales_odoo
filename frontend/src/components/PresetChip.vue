@@ -1,11 +1,12 @@
 <template>
-  <div v-if="label" class="flex items-center gap-1.5 rounded-full bg-surface-gray-3 py-1 pl-3 pr-1.5 text-sm text-ink-gray-8">
-    <span class="lucide-filter size-3.5 text-ink-gray-5" />
-    <span>Showing: <b class="font-medium">{{ label }}</b></span>
-    <button class="flex size-5 items-center justify-center rounded-full hover:bg-surface-gray-4" title="Show all" @click="clear">
-      <span class="lucide-x size-3.5" />
+  <!-- A dashboard card's filter, as an Odoo search facet. -->
+  <span v-if="label" class="flex max-w-full items-stretch overflow-hidden rounded border border-odoo-line text-[13px]">
+    <span class="flex items-center bg-odoo-primary px-1.5 text-white"><span class="lucide-star size-3.5" aria-hidden="true" /></span>
+    <span class="truncate bg-odoo-hover px-1.5 py-0.5 text-odoo-text">{{ label }}</span>
+    <button type="button" class="flex items-center bg-odoo-hover px-1 text-odoo-muted hover:text-odoo-strong" :aria-label="`Remove ${label}`" title="Show all" @click="clear">
+      <span class="lucide-x size-3.5" aria-hidden="true" />
     </button>
-  </div>
+  </span>
 </template>
 
 <script setup>

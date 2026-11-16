@@ -1,7 +1,7 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Products">
+    <PageHeader title="Products" :pager="pager" flush>
       <template #meta>
         <span class="text-ink-gray-5">Synced from the store</span>
       </template>
@@ -15,26 +15,25 @@
           @click="syncProducts"
         />
       </template>
+      <template #search>
+        <ListFilters v-model="model" search-placeholder="Search title, SKU or barcode" :tabs="tabs">
+          <template #search-actions>
+            <!-- No camera inside Shopify admin (iframe) -->
+            <Button v-if="!embedded" icon="lucide-scan-barcode" tooltip="Scan barcode" aria-label="Scan barcode" @click="scanOpen = true" />
+          </template>
+          <PresetChip :label="presetLabel" />
+        </ListFilters>
+      </template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search title, SKU or barcode" :tabs="tabs">
-        <template #search-actions>
-          <!-- No camera inside Shopify admin (iframe) -->
-          <Button v-if="!embedded" icon="lucide-scan-barcode" tooltip="Scan barcode" aria-label="Scan barcode" @click="scanOpen = true" />
-        </template>
-        <PresetChip :label="presetLabel" />
-      </ListFilters>
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'Product', params: { name: row.name } })"
         empty-icon="lucide-package"
         empty-title="No products found"
-        @load-more="list.next()"
       >
         <template #cell-product_title="{ row }">
           <div class="flex items-center gap-3">
@@ -54,7 +53,6 @@
         </template>
         <template #cell-status="{ value }"><StatusPill :status="value === 'Active' ? 'Active' : value" /></template>
       </DataTable>
-    </div>
     <BarcodeScanner v-model="scanOpen" @scanned="onScanned" />
   </div>
 </template>
@@ -84,11 +82,11 @@ const tabs = [
   { label: 'All', value: 'all' },
 ]
 const columns = [
-  { key: 'product_title', label: 'Product' },
-  { key: 'sku', label: 'SKU', format: (v) => v || '—' },
-  { key: 'price', label: 'Price', align: 'right', format: (v) => formatCurrency(v) },
-  { key: 'available_qty', label: 'Stock', align: 'right' },
-  { key: 'status', label: 'Status' },
+  { key: 'product_title', label: 'Product', sortField: 'product_title' },
+  { key: 'sku', label: 'SKU', sortField: 'sku', format: (v) => v || '—' },
+  { key: 'price', label: 'Price', sortField: 'price', align: 'right', format: (v) => formatCurrency(v) },
+  { key: 'available_qty', label: 'Stock', sortField: 'available_qty', align: 'right' },
+  { key: 'status', label: 'Status', sortField: 'status' },
 ]
 
 function buildFilters(m) {
@@ -103,7 +101,7 @@ function buildFilters(m) {
 }
 
 const route = useRoute()
-const { model, list, count, refresh, presetLabel, pageSize } = useDocList({
+const { model, list, count, refresh, presetLabel, pageSize, pager, sort } = useDocList({
   doctype: 'Platform Product',
   fields: ['name', 'product_title', 'variant_title', 'collection', 'sku', 'price', 'available_qty', 'track_inventory', 'status', 'image'],
   orderBy: 'product_title asc',

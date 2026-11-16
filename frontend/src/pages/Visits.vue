@@ -1,28 +1,28 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Visits">
+    <PageHeader title="Visits" :pager="pageTab === 'visits' ? pager : null" flush>
       <template #actions>
         <Button v-if="pageTab === 'visits'" label="New Visit" icon-left="lucide-plus" variant="solid" @click="newVisitOpen = true" />
       </template>
+      <template v-if="pageTab === 'visits'" #search>
+        <ListFilters v-model="model" search-placeholder="Search shop" :tabs="tabs" :fields="fields">
+          <PresetChip :label="presetLabel" />
+        </ListFilters>
+      </template>
     </PageHeader>
-    <div v-if="session.isManager" class="shrink-0 px-5 pb-3"><TabButtons v-model="pageTab" :options="pageTabs" /></div>
+    <div v-if="session.isManager" class="shrink-0 border-b border-odoo-line bg-white px-4 py-2"><TabButtons v-model="pageTab" :options="pageTabs" /></div>
     <VisitImport v-if="pageTab === 'import'" />
-    <div v-show="pageTab === 'visits'" class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search shop" :tabs="tabs" :fields="fields">
-        <PresetChip :label="presetLabel" />
-      </ListFilters>
+    <div v-show="pageTab === 'visits'" class="flex min-h-0 flex-1 flex-col">
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'Visit', params: { name: row.name } })"
         empty-icon="lucide-map-pin-check"
         empty-title="No visits found"
-        @load-more="list.next()"
       >
         <template #cell-retailer_name="{ row }">
           <div class="font-medium text-ink-gray-9">{{ row.retailer_name }}</div>
@@ -81,13 +81,13 @@ const tabs = [
 ]
 const fields = [{ fieldname: 'status', label: 'Status', options: ['', 'Planned', 'In Progress', 'Completed', 'Cancelled'] }]
 const columns = [
-  { key: 'retailer_name', label: 'Shop' },
-  { key: 'sales_rep_name', label: 'Sales Rep' },
-  { key: 'visit_date', label: 'Date', format: formatDate },
-  { key: 'check_in_time', label: 'Check-in', format: (v) => (v ? formatTime(v) : '—') },
-  { key: 'time_on_site_min', label: 'On Site', align: 'right', format: (v, row) => (row.status === 'Completed' ? `${v || 0} min` : '—') },
+  { key: 'retailer_name', label: 'Shop', sortField: 'retailer_name' },
+  { key: 'sales_rep_name', label: 'Sales Rep', sortField: 'sales_rep_name' },
+  { key: 'visit_date', label: 'Date', sortField: 'visit_date', format: formatDate },
+  { key: 'check_in_time', label: 'Check-in', sortField: 'check_in_time', format: (v) => (v ? formatTime(v) : '—') },
+  { key: 'time_on_site_min', label: 'On Site', sortField: 'time_on_site_min', align: 'right', format: (v, row) => (row.status === 'Completed' ? `${v || 0} min` : '—') },
   { key: 'within_geofence', label: 'Geofence' },
-  { key: 'status', label: 'Status' },
+  { key: 'status', label: 'Status', sortField: 'status' },
 ]
 
 function buildFilters(m) {
@@ -99,7 +99,7 @@ function buildFilters(m) {
   return filters
 }
 
-const { model, list, count, presetLabel, pageSize } = useDocList({
+const { model, list, count, presetLabel, pageSize, pager, sort } = useDocList({
   doctype: 'Visit',
   fields: ['name', 'retailer_name', 'city', 'sales_rep_name', 'visit_date', 'status', 'check_in_time', 'time_on_site_min', 'within_geofence', 'distance_from_retailer_m'],
   orderBy: 'visit_date desc, modified desc',

@@ -1,26 +1,25 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Shops">
+    <PageHeader title="Shops" :pager="pager" flush>
       <template #actions>
         <Button label="New Shop" icon-left="lucide-plus" variant="solid" @click="newRetailerOpen = true" />
       </template>
+      <template #search>
+        <ListFilters v-model="model" search-placeholder="Search name, city, phone" :tabs="tabs" :fields="fields">
+          <PresetChip :label="presetLabel" />
+        </ListFilters>
+      </template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search name, city, phone" :tabs="tabs" :fields="fields">
-        <PresetChip :label="presetLabel" />
-      </ListFilters>
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'Retailer', params: { name: row.name } })"
         empty-icon="lucide-store"
         empty-title="No shops found"
-        @load-more="list.next()"
       >
         <template #cell-retailer_name="{ row }">
           <div class="font-medium text-ink-gray-9">{{ row.retailer_name }}</div>
@@ -33,7 +32,6 @@
           <StatusPill :status="row.status === 'Inactive' ? 'Inactive' : row.sync_status || 'Draft'" />
         </template>
       </DataTable>
-    </div>
     <RetailerDialog v-model="newRetailerOpen" />
   </div>
 </template>
@@ -63,12 +61,12 @@ const fields = [
   { fieldname: 'sync_status', label: 'Sync', options: ['', 'Draft', 'Pending', 'Synced', 'Failed'] },
 ]
 const columns = [
-  { key: 'retailer_name', label: 'Shop' },
-  { key: 'retailer_type', label: 'Type' },
+  { key: 'retailer_name', label: 'Shop', sortField: 'retailer_name' },
+  { key: 'retailer_type', label: 'Type', sortField: 'retailer_type' },
   { key: 'sales_rep_name', label: 'Sales Rep' },
   { key: 'phone', label: 'Phone' },
-  { key: 'last_visit', label: 'Last Visit' },
-  { key: 'sync_status', label: 'Status' },
+  { key: 'last_visit', label: 'Last Visit', sortField: 'last_visit' },
+  { key: 'sync_status', label: 'Status', sortField: 'sync_status' },
 ]
 
 function buildFilters(m) {
@@ -80,7 +78,7 @@ function buildFilters(m) {
 }
 
 const route = useRoute()
-const { model, list, count, presetLabel, pageSize } = useDocList({
+const { model, list, count, presetLabel, pageSize, pager, sort } = useDocList({
   doctype: 'Retailer',
   fields: ['name', 'retailer_name', 'city', 'retailer_type', 'sales_rep', 'sales_rep.full_name as sales_rep_name', 'phone', 'last_visit', 'status', 'sync_status'],
   orderBy: 'retailer_name asc',

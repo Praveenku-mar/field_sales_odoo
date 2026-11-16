@@ -1,24 +1,23 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Sales Reps">
+    <PageHeader title="Sales Reps" :pager="pager" flush>
       <template #actions>
         <Button v-if="session.isManager" label="New Sales Rep" icon-left="lucide-plus" variant="solid" @click="newRepOpen = true" />
       </template>
+      <template #search>
+        <ListFilters v-model="model" search-placeholder="Search name, email, territory" :tabs="tabs" :fields="fields" />
+      </template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search name, email, territory" :tabs="tabs" :fields="fields" />
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'SalesRep', params: { name: row.name } })"
         empty-icon="lucide-user-round"
         empty-title="No sales reps found"
-        @load-more="list.next()"
       >
         <template #cell-full_name="{ row }">
           <div class="flex items-center gap-2.5">
@@ -40,7 +39,6 @@
           <StatusPill :status="row.active ? 'Active' : 'Inactive'" />
         </template>
       </DataTable>
-    </div>
     <NewSalesRepDialog v-model="newRepOpen" />
   </div>
 </template>
@@ -69,14 +67,14 @@ const tabs = [
 ]
 const fields = [{ fieldname: 'territory', label: 'Territory', type: 'text' }]
 const columns = [
-  { key: 'full_name', label: 'Sales Rep' },
-  { key: 'territory', label: 'Territory' },
+  { key: 'full_name', label: 'Sales Rep', sortField: 'full_name' },
+  { key: 'territory', label: 'Territory', sortField: 'territory' },
   { key: 'reports_to_name', label: 'Reports To' },
   { key: 'mobile', label: 'Mobile' },
-  { key: 'monthly_target', label: 'Monthly Target', align: 'right', format: (v) => (v ? formatCurrency(v, undefined, 0) : '—') },
+  { key: 'monthly_target', label: 'Monthly Target', sortField: 'monthly_target', sum: true, align: 'right', format: (v) => (v ? formatCurrency(v, undefined, 0) : '—') },
   { key: 'order_value', label: 'This Month', align: 'right' },
   { key: 'achievement', label: 'Achievement', width: '160px' },
-  { key: 'active', label: 'Status' },
+  { key: 'active', label: 'Status', sortField: 'active' },
 ]
 
 function buildFilters(m) {
@@ -87,7 +85,7 @@ function buildFilters(m) {
   return filters
 }
 
-const { model, list, count, pageSize } = useDocList({
+const { model, list, count, pageSize, pager, sort } = useDocList({
   doctype: 'Sales Rep',
   fields: ['name', 'full_name', 'user.user_image as user_image', 'territory', 'reports_to', 'reports_to.full_name as reports_to_name', 'mobile', 'monthly_target', 'active'],
   orderBy: 'full_name asc',
