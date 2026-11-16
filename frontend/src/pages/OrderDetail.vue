@@ -475,6 +475,9 @@
             </div>
         </template>
       </Notebook>
+      <template #chatter>
+        <Chatter doctype="Field Order" :name="name" :version="d.modified || null" />
+      </template>
     </FormView>
 
     <!-- Add Multiple -->
@@ -578,6 +581,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import FormView from '@/components/odoo/FormView.vue'
 import Notebook from '@/components/odoo/Notebook.vue'
 import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusPill from '@/components/StatusPill.vue'
 import LinkField from '@/components/LinkField.vue'

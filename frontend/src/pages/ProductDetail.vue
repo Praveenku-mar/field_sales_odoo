@@ -86,6 +86,9 @@
           </DataTable>
         </template>
       </Notebook>
+      <template #chatter>
+        <Chatter doctype="Platform Product" :name="name" :version="d.modified || null" />
+      </template>
     </FormView>
   </div>
 </template>
@@ -97,6 +100,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import FormView from '@/components/odoo/FormView.vue'
 import Notebook from '@/components/odoo/Notebook.vue'
 import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import DataTable from '@/components/DataTable.vue'

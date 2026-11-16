@@ -83,6 +83,9 @@
           </DataTable>
         </template>
       </Notebook>
+      <template #chatter>
+        <Chatter doctype="Retailer" :name="name" :version="d.modified || null" />
+      </template>
     </FormView>
 
     <!-- Managers only: session.isManager gates the Edit button above. -->
@@ -99,6 +102,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import FormView from '@/components/odoo/FormView.vue'
 import Notebook from '@/components/odoo/Notebook.vue'
 import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import MapEmbed from '@/components/MapEmbed.vue'

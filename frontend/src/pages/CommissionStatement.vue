@@ -51,6 +51,9 @@
           </DataTable>
         </template>
       </Notebook>
+      <template #chatter>
+        <Chatter doctype="Commission Statement" :name="name" :version="d.status || null" />
+      </template>
     </FormView>
 
     <Dialog v-model="confirm.open" :title="confirm.title" :message="confirm.message" :icon="confirm.icon" :theme="confirm.theme">
@@ -84,6 +87,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import FormView from '@/components/odoo/FormView.vue'
 import Notebook from '@/components/odoo/Notebook.vue'
 import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import DataTable from '@/components/DataTable.vue'
