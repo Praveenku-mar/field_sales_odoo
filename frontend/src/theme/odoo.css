@@ -256,3 +256,25 @@ textarea.bg-surface-gray-2 {
 .o-link:hover {
   color: var(--o-action-dark);
 }
+
+/* ---- Inside a form sheet: section cards read as Odoo's group headings ---- */
+.o-form-sheet .fs-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.o-form-sheet .fs-card > header {
+  padding: 0 0 4px;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--o-border);
+}
+.o-form-sheet .fs-card > header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+.o-form-sheet .fs-card > div {
+  padding-left: 0;
+  padding-right: 0;
+}

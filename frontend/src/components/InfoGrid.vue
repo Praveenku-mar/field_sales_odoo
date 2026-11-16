@@ -1,11 +1,17 @@
 <template>
-  <dl class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2" :class="columns === 3 && 'lg:grid-cols-3'">
-    <div v-for="item in visibleItems" :key="item.label" class="min-w-0">
-      <dt class="text-xs text-ink-gray-5">{{ item.label }}</dt>
-      <dd class="mt-0.5 break-words text-ink-gray-9">
-        <a v-if="item.href" :href="item.href" class="hover:underline">{{ item.value }}</a>
-        <RouterLink v-else-if="item.route" :to="item.route" class="hover:underline">{{ item.value }}</RouterLink>
-        <template v-else>{{ item.value ?? '—' }}</template>
+  <!-- Odoo's field groups (o_group): label on the left, value on the right, in one or two
+       columns. Links in the action teal. -->
+  <dl class="grid grid-cols-1 gap-x-10 gap-y-1.5 sm:grid-cols-2" :class="columns === 3 && 'lg:grid-cols-3'">
+    <div
+      v-for="item in visibleItems"
+      :key="item.label"
+      class="grid min-w-0 grid-cols-[minmax(7rem,38%)_minmax(0,1fr)] items-baseline gap-2 py-0.5"
+    >
+      <dt class="text-[14px] font-medium text-odoo-strong">{{ item.label }}</dt>
+      <dd class="break-words text-[14px] text-odoo-text">
+        <a v-if="item.href" :href="item.href" class="o-link">{{ item.value }}</a>
+        <RouterLink v-else-if="item.route" :to="item.route" class="o-link">{{ item.value }}</RouterLink>
+        <template v-else>{{ item.value ?? '' }}</template>
       </dd>
     </div>
   </dl>
