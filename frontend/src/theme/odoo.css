@@ -20,6 +20,17 @@
   --o-text-muted: #5f636f;
 
   --ink-blue-link: #017e84;
+  /* Odoo's graph palette for charts (frappe-ui reads --chart-categorical-N). */
+  --chart-categorical-1: #4ea7f2;
+  --chart-categorical-2: #ea6175;
+  --chart-categorical-3: #43c5b1;
+  --chart-categorical-4: #f4a261;
+  --chart-categorical-5: #8481dd;
+  --chart-categorical-6: #ffd86d;
+  --chart-categorical-7: #3aa4a0;
+  --chart-categorical-8: #b87de8;
+  --chart-categorical-9: #7f7f7f;
+  --chart-categorical-10: #c8d46a;
   --surface-sidebar: #ffffff;
   --surface-gray-1: #f9fafb;
   --surface-gray-2: #f2f3f5;
@@ -277,4 +288,70 @@ textarea.bg-surface-gray-2 {
 .o-form-sheet .fs-card > div {
   padding-left: 0;
   padding-right: 0;
+}
+
+/* ---- Settings (o_settings): section titles as grey bands, setting boxes ---- */
+.o-settings .fs-card {
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+.o-settings section {
+  padding: 0 0 1.25rem !important;
+  border-top: 0 !important;
+}
+.o-settings section h3 {
+  margin: 0 -2rem 1rem;
+  padding: 0.5rem 2rem;
+  background-color: var(--o-border-light);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+.o-settings section > .grid,
+.o-settings section > div > .grid {
+  margin-top: 0.5rem;
+  column-gap: 3rem;
+}
+/* A checkbox setting: bold title, muted description under it (o_setting_box). */
+.o-settings label {
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+.o-settings p.text-sm,
+.o-settings .text-p-sm {
+  color: var(--o-text-muted);
+}
+@media (max-width: 639px) {
+  .o-settings section h3 {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* ---- Report tables drawn by their pages: Odoo's list view look ---- */
+.o-list table {
+  font-size: 13px;
+}
+.o-list thead tr {
+  background-color: #fff !important;
+  border-bottom: 2px solid var(--o-border) !important;
+}
+.o-list thead th {
+  color: var(--o-text-strong);
+  font-weight: 600;
+  font-size: 13px;
+}
+.o-list tbody tr {
+  border-bottom: 1px solid var(--o-border-light);
+}
+.o-list tbody tr:hover {
+  background-color: #f2f3f5;
+}
+.o-list tfoot tr {
+  border-top: 1px solid var(--o-border);
+  font-weight: 600;
+  color: var(--o-text-strong);
 }

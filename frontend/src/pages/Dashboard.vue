@@ -2,10 +2,27 @@
   <div>
     <PageHeader :title="greeting">
       <template #meta>
-        <TabButtons v-model="period" :options="PERIODS" />
-        <LoadingIndicator v-if="dash.loading && dash.data" class="size-4 text-ink-gray-5" />
+        <LoadingIndicator v-if="dash.loading && dash.data" class="size-4 text-odoo-muted" />
       </template>
-      <template #actions>
+      <!-- The period as an Odoo search facet; the dropdown picks another. -->
+      <template #search>
+        <Dropdown :options="periodOptions" align="start">
+          <button
+            type="button"
+            class="flex min-h-[32px] w-full items-center gap-2 rounded border border-odoo-line bg-white px-2 text-left focus:outline-none focus-visible:border-odoo-action"
+            aria-label="Period"
+          >
+            <span class="lucide-search size-4 shrink-0 text-odoo-muted" aria-hidden="true" />
+            <span class="flex items-stretch overflow-hidden rounded border border-odoo-line text-[13px]">
+              <span class="flex items-center bg-odoo-primary px-1.5 text-white"><span class="lucide-calendar size-3.5" aria-hidden="true" /></span>
+              <span class="bg-odoo-hover px-1.5 py-0.5 text-odoo-text">{{ PERIODS.find((p) => p.value === period)?.label }}</span>
+            </span>
+            <span class="flex-1" />
+            <span class="lucide-chevron-down size-4 text-odoo-muted" aria-hidden="true" />
+          </button>
+        </Dropdown>
+      </template>
+      <template #views>
         <Button icon="lucide-refresh-cw" variant="ghost" aria-label="Refresh" :loading="dash.loading || overview.loading" @click="refresh" />
       </template>
     </PageHeader>
@@ -54,7 +71,7 @@
 
       <!-- Today -->
       <div>
-        <h2 class="mb-2 text-sm font-medium text-ink-gray-6">Today</h2>
+        <h2 class="mb-3 border-b border-odoo-line pb-1 text-[15px] font-semibold text-odoo-strong">Today</h2>
         <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <NumberCard
             label="Visits Today"
@@ -92,7 +109,7 @@
 
       <!-- Needs attention -->
       <div>
-        <h2 class="mb-2 text-sm font-medium text-ink-gray-6">Needs attention</h2>
+        <h2 class="mb-3 border-b border-odoo-line pb-1 text-[15px] font-semibold text-odoo-strong">Needs attention</h2>
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <NumberCard
             label="Missed Visits"
@@ -359,7 +376,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { Avatar, Badge, Button, ErrorMessage, LoadingIndicator, TabButtons, createResource, dayjs } from 'frappe-ui'
+import { Avatar, Badge, Button, Dropdown, ErrorMessage, LoadingIndicator, createResource, dayjs } from 'frappe-ui'
 import { ListView } from 'frappe-ui/experimental'
 import { AreaChart, BarChart, DonutChart, LineChart } from 'frappe-ui/charts'
 import PageHeader from '@/components/PageHeader.vue'
@@ -371,6 +388,7 @@ import Achievement from '@/components/Achievement.vue'
 import { useSessionStore } from '@/stores/session'
 import { formatCurrency, formatDate, formatDateTime, formatTime, orderStatus } from '@/utils/format'
 
+const periodOptions = computed(() => PERIODS.map((p) => ({ label: p.label, selected: p.value === period.value, onClick: () => (period.value = p.value) })))
 const PERIODS = [
   { label: 'Today', value: 'today' },
   { label: 'This Week', value: 'week' },
