@@ -22,7 +22,7 @@ import { getPreference, setPreference } from '@/utils/storage'
  *   limit) is remembered per doctype in this browser
  * @param {string|null} [options.preset]  dashboard preset key (e.g. from ?preset=)
  *
- * @returns {{ model, list, count, refresh, presetLabel, pageSize, pager, sort }}
+ * @returns {{ model, list, count, refresh, presetLabel, pageSize, pager, sort, query, doctype, fields }}
  *   `list` keeps the shape pages already use: `data`, `list.loading`, `hasNextPage`, `next()`,
  *   `reload()`. `pager` drives components/odoo/Pager.vue; `sort` the list view's headers.
  */
@@ -70,6 +70,9 @@ export function useDocList({
 
   // The filters of the current search, fixed when it is run (paging keeps them).
   let current = { filters: [], or_filters: [] }
+  // The same, for views that load their own rows (grouped kanban columns): `version` changes
+  // on every new search.
+  const query = reactive({ filters: [], or_filters: [], order_by: orderBy, version: 0 })
 
   const rows = createResource({
     url: 'frappe.client.get_list',
@@ -93,6 +96,11 @@ export function useDocList({
     // With a preset, wait for its filters: an unfiltered first page would flash the wrong rows.
     if (preset && !presetResource.data) return
     current = { filters: filters(), or_filters: orFilters() }
+    Object.assign(query, {
+      ...current,
+      order_by: sort.field ? `${sort.field} ${sort.order}` : orderBy,
+      version: query.version + 1,
+    })
     page.value = 0
     rows.reload()
     count.reload()
@@ -158,7 +166,7 @@ export function useDocList({
   )
   if (!preset) refresh()
 
-  return { model, list, count, refresh, presetLabel, pageSize, pager, sort }
+  return { model, list, count, refresh, presetLabel, pageSize, pager, sort, query, doctype, fields }
 }
 
 function readPageSize(key) {

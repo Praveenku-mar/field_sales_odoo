@@ -69,7 +69,7 @@
     </div>
 
     <!-- Filters panel toggle -->
-    <Popover v-if="tabs.length || choiceFields.length" align="end">
+    <Popover v-if="tabs.length || choiceFields.length || groups.length" align="end">
       <template #trigger>
         <button
           type="button"
@@ -80,7 +80,8 @@
           <span class="lucide-chevron-down size-4" aria-hidden="true" />
         </button>
       </template>
-      <div class="flex max-h-[70vh] min-w-[15rem] flex-col overflow-y-auto p-3 text-[14px]">
+      <div class="flex max-h-[70vh] flex-col gap-4 overflow-y-auto p-3 text-[14px] sm:flex-row">
+      <div class="flex min-w-[14rem] flex-col">
         <div class="mb-1 flex items-center gap-2 font-semibold text-odoo-strong">
           <span class="lucide-filter size-4 text-odoo-primary" aria-hidden="true" /> Filters
         </div>
@@ -111,6 +112,24 @@
           </button>
         </template>
       </div>
+      <!-- Group By (kanban columns) -->
+      <div v-if="groups.length" class="flex min-w-[12rem] flex-col sm:border-l sm:border-odoo-hover sm:pl-4">
+        <div class="mb-1 flex items-center gap-2 font-semibold text-odoo-strong">
+          <span class="lucide-layers size-4 text-odoo-action" aria-hidden="true" /> Group By
+        </div>
+        <button
+          v-for="g in groups"
+          :key="g.field"
+          type="button"
+          class="flex items-center gap-2 rounded px-2 py-1 text-left hover:bg-odoo-hover"
+          :aria-pressed="groupBy === g.field"
+          @click="groupBy = groupBy === g.field ? null : g.field"
+        >
+          <span class="size-4 shrink-0" :class="groupBy === g.field && 'lucide-check text-odoo-action'" aria-hidden="true" />
+          {{ g.label }}
+        </button>
+      </div>
+      </div>
     </Popover>
   </div>
 </template>
@@ -128,10 +147,14 @@ const props = defineProps({
    * are listed in the Filters panel; text fields are offered while typing ("Search X for:").
    */
   fields: { type: Array, default: () => [] },
+  /** Group By choices (kanban columns): [{ field, label }]. Empty hides the section. */
+  groups: { type: Array, default: () => [] },
 })
 
 /** { search, tab, ...fields } — the parent turns these into list filters. */
 const model = defineModel({ type: Object, default: () => ({}) })
+/** The field the kanban is grouped by (v-model:group-by), or null. */
+const groupBy = defineModel('groupBy', { type: String, default: null })
 
 const input = ref(null)
 const query = ref('')
@@ -179,6 +202,10 @@ const facets = computed(() => {
       value: label,
       remove: () => (values[field.fieldname] = ''),
     })
+  }
+  const group = props.groups.find((g) => g.field === groupBy.value)
+  if (group) {
+    list.push({ key: 'group', group: 'Group By', icon: 'lucide-layers', value: group.label, remove: () => (groupBy.value = null) })
   }
   if (model.value.search) {
     list.push({
