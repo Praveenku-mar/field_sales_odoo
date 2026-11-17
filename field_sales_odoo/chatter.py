@@ -2,9 +2,10 @@
 # For license information, please see license.txt
 
 """
-The record's chatter in the Odoo-style app (frontend/src/components/odoo/Chatter.vue): its
-timeline from Frappe — comments and system notes (Comment), field changes (Version) and
-emails (Communication) — and "Log note" to add an internal comment.
+The record's history in the app — Odoo's chatter, the Shopify timeline, WooCommerce's notes,
+each edition drawing it its own way: its timeline from Frappe (comments and system notes from
+Comment, field changes from Version, emails from Communication) and "Log note" to add an
+internal comment.
 
 Staff only: a customer login (Field Sales Retailer) never sees internal notes. Read access to
 the record is required for both reading and posting, as in the desk; the timeline returns plain

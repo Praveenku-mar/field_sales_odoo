@@ -33,6 +33,7 @@ Mappings worth knowing:
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -75,6 +76,8 @@ class OdooConnector(BaseConnector):
 		super().__init__(settings)
 		self.base_url = self.normalize_store_url(settings.store_url).rstrip("/")
 		self.rpc_url = f"{self.base_url}/jsonrpc"
+		#: None = not asked yet; the optional partner fields this Odoo has (get_customers)
+		self._partner_field_names: set[str] | None = None
 		self.database = (settings.odoo_database or "").strip()
 		self.username = (settings.odoo_username or "").strip()
 		# The loaded single holds the masked dummy for a saved key; get_password
@@ -370,6 +373,35 @@ class OdooConnector(BaseConnector):
 		next_cursor = str(offset + PAGE_SIZE) if len(rows) == PAGE_SIZE else None
 		return {"items": items, "next_cursor": next_cursor}
 
+	def get_customers(self, cursor: str | None = None) -> dict:
+		"""
+		One page of Odoo customers: top-level partners (not a company's contacts) that are
+		customers (``customer_rank`` > 0; every partner where the store has no Invoicing app).
+		Only the partner fields this Odoo has are asked for (Odoo 18 has no ``mobile``), so no
+		request fails on a missing field.
+		"""
+		offset = int(cursor or 0)
+		available = self._partner_fields()
+		fields = ["id", "name", "is_company", "email", "street", "street2", "city", "state_id", "zip"]
+		fields += [f for f in PARTNER_OPTIONAL_FIELDS if f in available]
+		domain = [("parent_id", "=", False)]
+		if "customer_rank" in available:
+			domain.append(("customer_rank", ">", 0))
+		rows = self._search_read("res.partner", domain, fields, "Customer Sync", limit=PAGE_SIZE, offset=offset)
+		items = [_normalize_partner(row) for row in rows]
+		next_cursor = str(offset + PAGE_SIZE) if len(rows) == PAGE_SIZE else None
+		return {"items": items, "next_cursor": next_cursor}
+
+	def _partner_fields(self) -> set[str]:
+		"""Which optional res.partner fields this Odoo has (asked once per connector)."""
+		if self._partner_field_names is None:
+			found = self._execute_kw(
+				"res.partner", "fields_get", [[*PARTNER_OPTIONAL_FIELDS, "customer_rank"]], "Customer Sync",
+				kwargs={"attributes": ["type"]},
+			)
+			self._partner_field_names = set(found) if isinstance(found, dict) else set()
+		return self._partner_field_names
+
 	def get_product(self, external_product_id: str) -> list[dict]:
 		try:
 			rows = self._search_products(
@@ -446,11 +478,82 @@ class OdooConnector(BaseConnector):
 					partial={"draft_id": str(order_id)}) from e
 
 		name = self._read("sale.order", [order_id], ["name"], operation, ref=field_order)[0]["name"]
+		# The customer portal's page for the order: the shop can accept and pay it there, with
+		# the payment methods the Odoo store offers (the app's "Pay in Store Checkout").
+		checkout_url = self._portal_url(order_id, field_order)
 		if confirmed:
 			return {"draft_id": None, "draft_name": None,
-				"order_id": str(order_id), "order_name": name, "checkout_url": None}
+				"order_id": str(order_id), "order_name": name, "checkout_url": checkout_url}
 		return {"draft_id": str(order_id), "draft_name": name,
-			"order_id": None, "order_name": None, "checkout_url": None}
+			"order_id": None, "order_name": None, "checkout_url": checkout_url}
+
+	def _portal_url(self, order_id: int, field_order: Document | None = None) -> str | None:
+		"""``/my/orders/<id>?access_token=…`` as an https URL, or None (no portal, or plain http)."""
+		try:
+			path = self._execute_kw("sale.order", "get_portal_url", [[order_id]], "Create Order", ref=field_order)
+		except ConnectorError:
+			return None  # the store's Odoo does not expose it; the app simply offers no store link
+		if not isinstance(path, str) or not path.startswith("/"):
+			return None
+		url = f"{self.base_url}{path}"
+		return url if url.startswith("https://") else None
+
+	def get_store_payment(self, external_order_id: str) -> dict | None:
+		"""
+		Paid on Odoo: what is paid on the order's posted customer invoices (credit notes taken
+		off); with no invoice payment (or no Invoicing app), a done payment transaction.
+		"""
+		if not str(external_order_id or "").isdigit():
+			return None
+		order_id = int(external_order_id)
+		orders = self._read("sale.order", [order_id], ["state", "currency_id", "invoice_ids"], "Commission")
+		if not orders or orders[0].get("state") == "cancel":
+			return None
+		order = orders[0]
+		currency = order["currency_id"][1] if isinstance(order.get("currency_id"), list) else None
+
+		paid, paid_at, reference = 0.0, None, None
+		invoice_ids = order.get("invoice_ids") or []
+		if invoice_ids:
+			moves = self._read(
+				"account.move", invoice_ids,
+				["state", "move_type", "payment_state", "amount_total", "amount_residual", "name", "write_date"],
+				"Commission",
+			)
+			for move in moves:
+				if move.get("state") != "posted" or move.get("payment_state") not in ("paid", "in_payment", "partial"):
+					continue
+				settled = frappe.utils.flt(move.get("amount_total")) - frappe.utils.flt(move.get("amount_residual"))
+				if move.get("move_type") == "out_refund":
+					paid -= settled
+				elif move.get("move_type") == "out_invoice":
+					paid += settled
+					reference = move.get("name") or reference
+					paid_at = max(filter(None, [paid_at, move.get("write_date")]), default=None)
+		if paid > 0:
+			return {"amount": paid, "currency": currency, "method": "Invoice", "reference": reference, "paid_at": paid_at}
+
+		for tx in self._done_transactions(order_id):
+			paid += frappe.utils.flt(tx.get("amount"))
+			reference = tx.get("reference") or reference
+			paid_at = max(filter(None, [paid_at, tx.get("last_state_change")]), default=None)
+		if paid > 0:
+			return {"amount": paid, "currency": currency, "method": "Online payment", "reference": reference, "paid_at": paid_at}
+		return None
+
+	def _done_transactions(self, order_id: int) -> list[dict]:
+		"""The order's done payment transactions; none without the payment app."""
+		try:
+			return self._search_read(
+				"payment.transaction",
+				[("sale_order_ids", "in", [order_id]), ("state", "=", "done")],
+				["amount", "reference", "last_state_change"],
+				"Commission",
+			)
+		except ConnectorError as e:
+			if e.code in ("NOT_FOUND", "BAD_FIELD"):
+				return []
+			raise
 
 	def _find_order_by_ref(self, field_order: Document, operation: str) -> int | None:
 		"""The draft a failed earlier attempt left behind, matched by our order no."""
@@ -778,6 +881,37 @@ def _partner_values(retailer: Document, email: str, country_id=False, state_id=F
 		"country_id": country_id,
 		"state_id": state_id,
 		"customer_rank": 1,
+	}
+
+
+# Partner fields some Odoo versions lack: Odoo 18 dropped mobile, older ones the related
+# country code. get_customers asks Odoo which of them it has (fields_get) and reads only those.
+PARTNER_OPTIONAL_FIELDS = ("phone", "mobile", "country_code")
+
+
+def _normalize_partner(row: dict) -> dict:
+	"""An Odoo partner as the connector's normalized customer dict."""
+
+	def clean(value) -> str | None:
+		return value.strip() if isinstance(value, str) and value.strip() else None
+
+	name = clean(row.get("name")) or ""
+	state = row.get("state_id")[1] if isinstance(row.get("state_id"), list) else None
+	return {
+		"external_customer_id": str(row.get("id")),
+		"email": clean(row.get("email")),
+		# A company is the shop; a person is named after themselves.
+		"first_name": "" if row.get("is_company") else name,
+		"last_name": "",
+		"company": name if row.get("is_company") else None,
+		"phone": clean(row.get("phone")) or clean(row.get("mobile")),
+		"address_line1": clean(row.get("street")),
+		"address_line2": clean(row.get("street2")),
+		"city": clean(row.get("city")),
+		# Odoo shows a state as "Tamil Nadu (IN)".
+		"state": re.sub(r"\s*\([A-Z]{2}\)$", "", state) if state else None,
+		"pincode": clean(row.get("zip")),
+		"country_code": (clean(row.get("country_code")) or "").upper() or None,
 	}
 
 

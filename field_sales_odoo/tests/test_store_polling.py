@@ -101,6 +101,9 @@ class TestPollStoreChanges(IntegrationTestCase):
 			p = patch.object(polling, target, return_value=value)
 			p.start()
 			self.addCleanup(p.stop)
+		p = patch.object(polling, "apply_store_payment")
+		self.store_payment = p.start()
+		self.addCleanup(p.stop)
 		p = patch.object(polling, "_changed_orders", side_effect=lambda conn, since: conn.get_changed_order_ids(["7001", "7002"], since))
 		p.start()
 		self.addCleanup(p.stop)
@@ -149,12 +152,13 @@ class TestPollStoreChanges(IntegrationTestCase):
 		reconcile.assert_not_called()
 		self.conn.get_changed_order_ids.assert_not_called()
 
-	def test_commission_off_skips_orders_but_products_still_follow(self):
+	def test_commission_off_still_follows_store_payments_and_products(self):
 		with patch.object(polling, "commission_enabled", return_value=False), patch.object(
 			polling, "reconcile_order"
 		) as reconcile, patch.object(polling, "sync_one_product") as sync_one:
 			polling.poll_store_changes()
 		reconcile.assert_not_called()
+		self.assertEqual(sorted(c.args[1] for c in self.store_payment.call_args_list), ["7001", "7002"])
 		sync_one.assert_called_once()
 
 	def test_order_window_and_status_filters(self):

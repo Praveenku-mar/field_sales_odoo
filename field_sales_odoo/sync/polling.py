@@ -8,7 +8,8 @@ so connectors/odoo.py refuses them). Every 15 minutes:
 - Orders: of the Field Orders pushed to Odoo in the last ORDER_DAYS days, the ones whose sale
   order, invoice or payment changed since the last check go through ``reconcile_order`` — the
   path an order webhook takes on the other platforms — so paid / delivered / cancelled /
-  refunded reach commission.
+  refunded reach commission — and ``apply_store_payment``, so an order paid on Odoo (invoice
+  or portal payment) is paid in Agamsale too.
 - Products: products, variants and stock that changed since the last check go through
   ``sync_one_product`` — the product webhook's path — so prices, archiving and stock follow.
 
@@ -28,6 +29,7 @@ from field_sales_odoo.commission import commission_enabled
 from field_sales_odoo.commission.engine import reconcile_order
 from field_sales_odoo.connectors import ConnectorError, get_connector
 from field_sales_odoo.field_sales_odoo.doctype.sync_log.sync_log import log_sync, log_sync_durable
+from field_sales_odoo.payments.store_payments import apply_store_payment
 from field_sales_odoo.sync.products import sync_one_product
 
 ORDERS_MARK = "field_sales_odoo_orders_checked_until"
@@ -48,8 +50,7 @@ def poll_store_changes():
 		conn = get_connector()
 	except frappe.ValidationError:
 		return  # not configured yet
-	if commission_enabled():
-		_run(ORDERS_MARK, "Commission", lambda since: _changed_orders(conn, since), _apply_order)
+	_run(ORDERS_MARK, "Commission", lambda since: _changed_orders(conn, since), lambda oid: _apply_order(conn, oid))
 	if settings.default_location_id:
 		_run(PRODUCTS_MARK, "Product Sync", lambda since: conn.get_changed_product_ids(since), lambda pid: sync_one_product(conn, pid))
 
@@ -117,5 +118,8 @@ def _changed_orders(conn, since: str) -> set[str]:
 	return conn.get_changed_order_ids(ids, since) if ids else set()
 
 
-def _apply_order(external_order_id: str):
-	reconcile_order(external_order_id)
+def _apply_order(conn, external_order_id: str):
+	"""What an order webhook does elsewhere: commission (when on) and a payment made on Odoo."""
+	if commission_enabled():
+		reconcile_order(external_order_id)
+	apply_store_payment(conn, external_order_id)
