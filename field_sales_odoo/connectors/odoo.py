@@ -446,11 +446,82 @@ class OdooConnector(BaseConnector):
 					partial={"draft_id": str(order_id)}) from e
 
 		name = self._read("sale.order", [order_id], ["name"], operation, ref=field_order)[0]["name"]
+		# The customer portal's page for the order: the shop can accept and pay it there, with
+		# the payment methods the Odoo store offers (the app's "Pay in Store Checkout").
+		checkout_url = self._portal_url(order_id, field_order)
 		if confirmed:
 			return {"draft_id": None, "draft_name": None,
-				"order_id": str(order_id), "order_name": name, "checkout_url": None}
+				"order_id": str(order_id), "order_name": name, "checkout_url": checkout_url}
 		return {"draft_id": str(order_id), "draft_name": name,
-			"order_id": None, "order_name": None, "checkout_url": None}
+			"order_id": None, "order_name": None, "checkout_url": checkout_url}
+
+	def _portal_url(self, order_id: int, field_order: Document | None = None) -> str | None:
+		"""``/my/orders/<id>?access_token=…`` as an https URL, or None (no portal, or plain http)."""
+		try:
+			path = self._execute_kw("sale.order", "get_portal_url", [[order_id]], "Create Order", ref=field_order)
+		except ConnectorError:
+			return None  # the store's Odoo does not expose it; the app simply offers no store link
+		if not isinstance(path, str) or not path.startswith("/"):
+			return None
+		url = f"{self.base_url}{path}"
+		return url if url.startswith("https://") else None
+
+	def get_store_payment(self, external_order_id: str) -> dict | None:
+		"""
+		Paid on Odoo: what is paid on the order's posted customer invoices (credit notes taken
+		off); with no invoice payment (or no Invoicing app), a done payment transaction.
+		"""
+		if not str(external_order_id or "").isdigit():
+			return None
+		order_id = int(external_order_id)
+		orders = self._read("sale.order", [order_id], ["state", "currency_id", "invoice_ids"], "Commission")
+		if not orders or orders[0].get("state") == "cancel":
+			return None
+		order = orders[0]
+		currency = order["currency_id"][1] if isinstance(order.get("currency_id"), list) else None
+
+		paid, paid_at, reference = 0.0, None, None
+		invoice_ids = order.get("invoice_ids") or []
+		if invoice_ids:
+			moves = self._read(
+				"account.move", invoice_ids,
+				["state", "move_type", "payment_state", "amount_total", "amount_residual", "name", "write_date"],
+				"Commission",
+			)
+			for move in moves:
+				if move.get("state") != "posted" or move.get("payment_state") not in ("paid", "in_payment", "partial"):
+					continue
+				settled = frappe.utils.flt(move.get("amount_total")) - frappe.utils.flt(move.get("amount_residual"))
+				if move.get("move_type") == "out_refund":
+					paid -= settled
+				elif move.get("move_type") == "out_invoice":
+					paid += settled
+					reference = move.get("name") or reference
+					paid_at = max(filter(None, [paid_at, move.get("write_date")]), default=None)
+		if paid > 0:
+			return {"amount": paid, "currency": currency, "method": "Invoice", "reference": reference, "paid_at": paid_at}
+
+		for tx in self._done_transactions(order_id):
+			paid += frappe.utils.flt(tx.get("amount"))
+			reference = tx.get("reference") or reference
+			paid_at = max(filter(None, [paid_at, tx.get("last_state_change")]), default=None)
+		if paid > 0:
+			return {"amount": paid, "currency": currency, "method": "Online payment", "reference": reference, "paid_at": paid_at}
+		return None
+
+	def _done_transactions(self, order_id: int) -> list[dict]:
+		"""The order's done payment transactions; none without the payment app."""
+		try:
+			return self._search_read(
+				"payment.transaction",
+				[("sale_order_ids", "in", [order_id]), ("state", "=", "done")],
+				["amount", "reference", "last_state_change"],
+				"Commission",
+			)
+		except ConnectorError as e:
+			if e.code in ("NOT_FOUND", "BAD_FIELD"):
+				return []
+			raise
 
 	def _find_order_by_ref(self, field_order: Document, operation: str) -> int | None:
 		"""The draft a failed earlier attempt left behind, matched by our order no."""

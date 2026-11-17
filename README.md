@@ -18,6 +18,7 @@ bench --site [your-site] install-app field_sales_odoo
 - **Customers**: Create and update Odoo partners (`res.partner`) from Retailer records.
 - **Orders**: Push submitted Field Orders as Odoo sale orders (`sale.order`) in either Draft (`draft`) or Confirmed (`sale`) state.
 - **Shop Settings**: Match company currency and user time zone from Odoo.
+- **Store payments**: each pushed order gets Odoo's customer-portal link (`get_portal_url`), offered in the app as "Pay in Store Checkout" (https stores only). An order paid in Odoo (posted invoices, or a done online payment) marks the Field Order paid on the next poll.
 - **Store changes**: Odoo sends no webhooks, so every 15 minutes the app asks Odoo which sale orders (order, invoice or payment), products and stock changed and applies them as the other platforms' webhooks do: commission follows paid / delivered / cancelled / refunded orders, and prices, archiving and stock follow the store (`sync/polling.py`).
 
 ## License
