@@ -79,6 +79,8 @@ scheduler_events = {
 		# Re-push Field Orders that failed (up to 5 attempts) or lost their job.
 		"*/15 * * * *": [
 			"field_sales_odoo.sync.orders.retry_failed_orders",
+			# Odoo sends no webhooks: ask it which orders, products and stock changed.
+			"field_sales_odoo.sync.polling.poll_store_changes",
 		],
 		# Daily team summary to each manager, in the system timezone.
 		"0 20 * * *": [
