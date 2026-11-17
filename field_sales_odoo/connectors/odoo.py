@@ -377,8 +377,8 @@ class OdooConnector(BaseConnector):
 		customers (``customer_rank`` > 0; every partner where the store has no Invoicing app).
 		"""
 		offset = int(cursor or 0)
-		fields = ["id", "name", "is_company", "email", "phone", "mobile", "street", "street2",
-			"city", "state_id", "zip", "country_code"]
+		fields = ["id", "name", "is_company", "email", *PARTNER_OPTIONAL_FIELDS, "street", "street2",
+			"city", "state_id", "zip"]
 		domain = [("parent_id", "=", False), ("customer_rank", ">", 0)]
 		while True:
 			try:
@@ -388,9 +388,11 @@ class OdooConnector(BaseConnector):
 			except ConnectorError as e:
 				if e.code != "BAD_FIELD":
 					raise
-				if "country_code" in fields:
-					fields.remove("country_code")  # older Odoo: no related country code
-				elif len(domain) > 1:
+				missing = _invalid_field(e.message)
+				if missing in PARTNER_OPTIONAL_FIELDS and missing in fields:
+					# Not on this Odoo version (e.g. Odoo 18 has no mobile), so read without it.
+					fields.remove(missing)
+				elif missing == "customer_rank" and len(domain) > 1:
 					domain = domain[:1]  # no Invoicing app: no customer rank
 				else:
 					raise
@@ -878,6 +880,17 @@ def _partner_values(retailer: Document, email: str, country_id=False, state_id=F
 		"state_id": state_id,
 		"customer_rank": 1,
 	}
+
+
+# Partner fields some Odoo versions lack: Odoo 18 dropped mobile, older ones the related
+# country code. get_customers reads without the one Odoo names as invalid.
+PARTNER_OPTIONAL_FIELDS = ("phone", "mobile", "country_code")
+
+
+def _invalid_field(message: str | None) -> str | None:
+	"""The field named in Odoo's "Invalid field 'mobile' on 'res.partner'" (or similar)."""
+	match = re.search(r"(?:invalid|unknown) field[^'\"]*['\"]([\w.]+)['\"]", message or "", re.IGNORECASE)
+	return match.group(1) if match else None
 
 
 def _normalize_partner(row: dict) -> dict:

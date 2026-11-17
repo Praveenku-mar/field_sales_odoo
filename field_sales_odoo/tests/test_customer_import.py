@@ -141,20 +141,34 @@ class TestOdooCustomers(IntegrationTestCase):
 
 		def fake(model, domain, fields, operation, **kwargs):
 			calls.append((domain, list(fields)))
+			# Odoo 18 has no mobile; an old Odoo no related country code; no Invoicing app no rank.
+			if "mobile" in fields:
+				raise ConnectorError("Invalid field 'mobile' on 'res.partner'", code="BAD_FIELD")
 			if "country_code" in fields:
-				raise ConnectorError("Invalid field country_code", code="BAD_FIELD")
+				raise ConnectorError("Invalid field 'country_code' on 'res.partner'", code="BAD_FIELD")
 			if ("customer_rank", ">", 0) in domain:
-				raise ConnectorError("Invalid field customer_rank", code="BAD_FIELD")
+				raise ConnectorError("Invalid field 'customer_rank' in leaf ('customer_rank', '>', 0)", code="BAD_FIELD")
 			return [
-				{"id": 9, "name": "Murugan Stores", "is_company": True, "email": "m@example.com", "phone": False, "mobile": "98765 43210", "street": "1 Main Rd", "street2": False, "city": "Salem", "state_id": [5, "Tamil Nadu (IN)"], "zip": "636001"},
+				{"id": 9, "name": "Murugan Stores", "is_company": True, "email": "m@example.com", "phone": "98765 43210", "street": "1 Main Rd", "street2": False, "city": "Salem", "state_id": [5, "Tamil Nadu (IN)"], "zip": "636001"},
 				{"id": 10, "name": "Asha M", "is_company": False, "email": False, "phone": "+91 99999 00000", "mobile": False, "street": False, "street2": False, "city": False, "state_id": False, "zip": False},
 			]
 
 		with patch.object(conn, "_search_read", side_effect=fake):
 			page = conn.get_customers(None)
-		# Dropped the related country code first, then the customer rank (no Invoicing app).
+		# Read without each field Odoo named, then without the customer rank.
 		self.assertEqual(calls[-1][0], [("parent_id", "=", False)])
+		self.assertNotIn("mobile", calls[-1][1])
+		self.assertNotIn("country_code", calls[-1][1])
+		self.assertIn("phone", calls[-1][1])
 		self.assertIsNone(page["next_cursor"])
 		shop, person = page["items"]
 		self.assertEqual((shop["company"], shop["first_name"], shop["phone"], shop["state"]), ("Murugan Stores", "", "98765 43210", "Tamil Nadu"))
 		self.assertEqual((person["company"], person["first_name"], person["email"]), (None, "Asha M", None))
+
+	def test_other_invalid_fields_are_not_hidden(self):
+		from field_sales_odoo.connectors.base import ConnectorError
+		from field_sales_odoo.tests.test_odoo_connector import make_connector
+
+		conn = make_connector()
+		with patch.object(conn, "_search_read", side_effect=ConnectorError("Invalid field 'name' on 'res.partner'", code="BAD_FIELD")):
+			self.assertRaises(ConnectorError, conn.get_customers, None)
