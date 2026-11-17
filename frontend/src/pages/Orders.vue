@@ -120,7 +120,7 @@ function buildFilters(m) {
   return filters
 }
 
-const PAYMENT_STATUSES = ['Unpaid', 'Link Sent', 'Partially Paid', 'Paid', 'Link Expired', 'Link Cancelled']
+const PAYMENT_STATUSES = ['Unpaid', 'Link Sent', 'Partially Paid', 'Paid', 'Link Expired', 'Link Cancelled', 'Partially Refunded', 'Refunded']
 const paymentFilter = {
   fieldname: 'payment_status',
   label: 'Payment',
@@ -159,7 +159,7 @@ const GROUPS = [
 ]
 const GROUP_COLUMNS = {
   sync_status: [{ value: 'Draft', label: 'Draft' }, { value: 'Pending', label: 'Pending' }, { value: 'Synced', label: 'Synced' }, { value: 'Failed', label: 'Failed' }],
-  payment_status: [{ value: 'Unpaid', label: 'Unpaid' }, { value: 'Link Sent', label: 'Link Sent' }, { value: 'Partially Paid', label: 'Partially Paid' }, { value: 'Paid', label: 'Paid' }, { value: 'Link Expired', label: 'Link Expired' }, { value: 'Link Cancelled', label: 'Link Cancelled' }],
+  payment_status: [{ value: 'Unpaid', label: 'Unpaid' }, { value: 'Link Sent', label: 'Link Sent' }, { value: 'Partially Paid', label: 'Partially Paid' }, { value: 'Paid', label: 'Paid' }, { value: 'Link Expired', label: 'Link Expired' }, { value: 'Link Cancelled', label: 'Link Cancelled' }, { value: 'Partially Refunded', label: 'Partially Refunded' }, { value: 'Refunded', label: 'Refunded' }],
 }
 const kanbanGroupBy = computed(() => (view.value === 'kanban' ? groupBy.value : null))
 const kanban = useKanbanGroups(docList, kanbanGroupBy, GROUP_COLUMNS)
