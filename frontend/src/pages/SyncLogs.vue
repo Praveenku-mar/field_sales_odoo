@@ -1,28 +1,28 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Sync Log" />
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search record, error, endpoint" :tabs="tabs" :fields="fields">
-        <div v-if="reference" class="flex items-center gap-1.5 rounded-full bg-surface-gray-3 py-1 pl-3 pr-1.5 text-sm text-ink-gray-8">
-          <span class="lucide-filter size-3.5 text-ink-gray-5" />
-          <span>Showing: <b class="font-medium">{{ reference }}</b></span>
-          <button class="flex size-5 items-center justify-center rounded-full hover:bg-surface-gray-4" title="Show all" @click="clearReference">
-            <span class="lucide-x size-3.5" />
-          </button>
-        </div>
-      </ListFilters>
+    <PageHeader title="Sync Log" :pager="pager" flush>
+      <template #search>
+        <ListFilters v-model="model" search-placeholder="Search record, error, endpoint" :tabs="tabs" :fields="fields">
+          <div v-if="reference" class="flex items-center gap-1.5 rounded-full bg-surface-gray-3 py-1 pl-3 pr-1.5 text-sm text-ink-gray-8">
+            <span class="lucide-filter size-3.5 text-ink-gray-5" />
+            <span>Showing: <b class="font-medium">{{ reference }}</b></span>
+            <button class="flex size-5 items-center justify-center rounded-full hover:bg-surface-gray-4" title="Show all" @click="clearReference">
+              <span class="lucide-x size-3.5" />
+            </button>
+          </div>
+        </ListFilters>
+      </template>
+    </PageHeader>
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'SyncLogEntry', params: { name: row.name } })"
         empty-icon="lucide-scroll-text"
         empty-title="No sync log entries"
-        @load-more="list.next()"
       >
         <template #cell-creation="{ value }">
           <div class="whitespace-nowrap text-ink-gray-9">{{ relativeDay(value) }}, {{ formatTime(value) }}</div>
@@ -47,7 +47,6 @@
         </template>
         <template #cell-status="{ value }"><StatusPill :status="value" /></template>
       </DataTable>
-    </div>
   </div>
 </template>
 
@@ -86,13 +85,13 @@ const fields = [
   { fieldname: 'reference_doctype', label: 'Record type', options: ['', 'Field Order', 'Retailer', 'Platform Product', 'Store Connection'] },
 ]
 const columns = [
-  { key: 'creation', label: 'When', width: '150px' },
-  { key: 'operation', label: 'Operation' },
-  { key: 'reference_name', label: 'Record' },
+  { key: 'creation', label: 'When', sortField: 'creation', width: '150px' },
+  { key: 'operation', label: 'Operation', sortField: 'operation' },
+  { key: 'reference_name', label: 'Record', sortField: 'reference_name' },
   { key: 'error_message', label: 'Error' },
-  { key: 'attempt', label: 'Attempt', align: 'right', format: (v) => (v ? `#${v}` : '—') },
-  { key: 'duration_ms', label: 'Duration', align: 'right', format: (v) => (v == null ? '—' : `${formatNumber(v)} ms`) },
-  { key: 'status', label: 'Status' },
+  { key: 'attempt', label: 'Attempt', sortField: 'attempt', align: 'right', format: (v) => (v ? `#${v}` : '—') },
+  { key: 'duration_ms', label: 'Duration', sortField: 'duration_ms', align: 'right', format: (v) => (v == null ? '—' : `${formatNumber(v)} ms`) },
+  { key: 'status', label: 'Status', sortField: 'status' },
 ]
 
 function buildFilters(m) {
@@ -104,7 +103,7 @@ function buildFilters(m) {
   return filters
 }
 
-const { model, list, count, pageSize } = useDocList({
+const { model, list, count, pageSize, pager, sort } = useDocList({
   doctype: 'Sync Log',
   fields: ['name', 'creation', 'platform', 'operation', 'reference_doctype', 'reference_name', 'status', 'attempt', 'duration_ms', 'error_code', 'error_message'],
   orderBy: 'creation desc',

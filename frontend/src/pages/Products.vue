@@ -1,7 +1,7 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Products">
+    <PageHeader title="Products" :pager="kanbanGroupBy ? null : pager" flush>
       <template #meta>
         <span class="text-ink-gray-5">Synced from the store</span>
       </template>
@@ -15,26 +15,27 @@
           @click="syncProducts"
         />
       </template>
+      <template #search>
+        <ListFilters v-model="model" v-model:group-by="groupBy" :groups="view === 'kanban' ? GROUPS : []" search-placeholder="Search title, SKU or barcode" :tabs="tabs">
+          <template #search-actions>
+            <!-- No camera inside Shopify admin (iframe) -->
+            <Button v-if="!embedded" icon="lucide-scan-barcode" tooltip="Scan barcode" aria-label="Scan barcode" @click="scanOpen = true" />
+          </template>
+          <PresetChip :label="presetLabel" />
+        </ListFilters>
+      </template>
+      <template #views><ViewSwitcher v-model="view" /></template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search title, SKU or barcode" :tabs="tabs">
-        <template #search-actions>
-          <!-- No camera inside Shopify admin (iframe) -->
-          <Button v-if="!embedded" icon="lucide-scan-barcode" tooltip="Scan barcode" aria-label="Scan barcode" @click="scanOpen = true" />
-        </template>
-        <PresetChip :label="presetLabel" />
-      </ListFilters>
       <DataTable
+        v-if="view === 'list'"
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'Product', params: { name: row.name } })"
         empty-icon="lucide-package"
         empty-title="No products found"
-        @load-more="list.next()"
       >
         <template #cell-product_title="{ row }">
           <div class="flex items-center gap-3">
@@ -54,13 +55,40 @@
         </template>
         <template #cell-status="{ value }"><StatusPill :status="value === 'Active' ? 'Active' : value" /></template>
       </DataTable>
-    </div>
+      <KanbanView
+        v-else
+        :rows="list.data || []"
+        :loading="list.list.loading"
+        :columns="kanban.columns.value"
+        :row-route="(row) => ({ name: 'Product', params: { name: row.name } })"
+        empty-icon="lucide-package"
+        empty-title="No products found"
+        @load-more="kanban.loadMore"
+      >
+        <template #card="{ row }">
+          <div class="flex gap-3">
+            <img v-if="row.image" :src="row.image" alt="" class="size-16 shrink-0 rounded border border-odoo-line object-cover" />
+            <div v-else class="flex size-16 shrink-0 items-center justify-center rounded bg-odoo-hover">
+              <span class="lucide-package size-6 text-odoo-muted" aria-hidden="true" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="line-clamp-2 text-[14px] font-semibold text-odoo-strong">{{ row.product_title }}</div>
+              <div class="truncate text-odoo-muted">{{ row.variant_title || row.collection || '' }}</div>
+              <div v-if="row.sku" class="truncate text-xs text-odoo-muted">[{{ row.sku }}]</div>
+              <div class="mt-1 flex items-center justify-between gap-2">
+                <span class="font-medium tabular-nums text-odoo-strong">{{ formatCurrency(row.price) }}</span>
+                <span v-if="row.track_inventory" class="text-xs" :class="stockClass(row.available_qty)">{{ formatNumber(row.available_qty) }} in stock</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </KanbanView>
     <BarcodeScanner v-model="scanOpen" @scanned="onScanned" />
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, call, toast } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
@@ -73,6 +101,10 @@ import { isEmbedded } from '@/shopify/embedded'
 
 const embedded = isEmbedded()
 import { useDocList } from '@/composables/useDocList'
+import ViewSwitcher from '@/components/odoo/ViewSwitcher.vue'
+import KanbanView from '@/components/odoo/KanbanView.vue'
+import { useViewMode } from '@/composables/useViewMode'
+import { useKanbanGroups } from '@/composables/useKanbanGroups'
 import { formatCurrency, formatNumber } from '@/utils/format'
 import { callMethod, findProductByBarcode } from '@/utils/api'
 import { useSessionStore } from '@/stores/session'
@@ -84,11 +116,11 @@ const tabs = [
   { label: 'All', value: 'all' },
 ]
 const columns = [
-  { key: 'product_title', label: 'Product' },
-  { key: 'sku', label: 'SKU', format: (v) => v || '—' },
-  { key: 'price', label: 'Price', align: 'right', format: (v) => formatCurrency(v) },
-  { key: 'available_qty', label: 'Stock', align: 'right' },
-  { key: 'status', label: 'Status' },
+  { key: 'product_title', label: 'Product', sortField: 'product_title' },
+  { key: 'sku', label: 'SKU', sortField: 'sku', format: (v) => v || '—' },
+  { key: 'price', label: 'Price', sortField: 'price', align: 'right', format: (v) => formatCurrency(v) },
+  { key: 'available_qty', label: 'Stock', sortField: 'available_qty', align: 'right' },
+  { key: 'status', label: 'Status', sortField: 'status' },
 ]
 
 function buildFilters(m) {
@@ -103,7 +135,7 @@ function buildFilters(m) {
 }
 
 const route = useRoute()
-const { model, list, count, refresh, presetLabel, pageSize } = useDocList({
+const docList = useDocList({
   doctype: 'Platform Product',
   fields: ['name', 'product_title', 'variant_title', 'collection', 'sku', 'price', 'available_qty', 'track_inventory', 'status', 'image'],
   orderBy: 'product_title asc',
@@ -114,6 +146,19 @@ const { model, list, count, refresh, presetLabel, pageSize } = useDocList({
   initial: { tab: route.query.preset ? 'all' : route.query.tab || 'Active' },
   preset: route.query.preset || null,
 })
+const { model, list, count, refresh, presetLabel, pageSize, pager, sort } = docList
+
+// List or kanban (remembered; phones start in kanban), and the kanban's Group By columns.
+const view = useViewMode('products')
+const groupBy = ref(null)
+const GROUPS = [
+  { field: 'status', label: 'Status' },
+]
+const GROUP_COLUMNS = {
+  status: [{ value: 'Active', label: 'Active' }, { value: 'Draft', label: 'Draft' }, { value: 'Archived', label: 'Archived' }],
+}
+const kanbanGroupBy = computed(() => (view.value === 'kanban' ? groupBy.value : null))
+const kanban = useKanbanGroups(docList, kanbanGroupBy, GROUP_COLUMNS)
 
 // ---------------------------------------------------------------- barcode scan
 

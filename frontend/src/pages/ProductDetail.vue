@@ -1,59 +1,64 @@
 <template>
   <div>
-    <PageHeader :title="d.product_title || name" :status="d.status || null">
-      <template #meta>
-        <span v-if="d.variant_title" class="text-ink-gray-5">{{ d.variant_title }}</span>
-      </template>
-    </PageHeader>
+    <PageHeader :title="d.product_title || name" :breadcrumbs="[{ label: 'Products', to: { name: 'Products' } }]" />
 
     <div v-if="doc.get.error" class="px-5"><div class="fs-card"><EmptyState icon="lucide-circle-alert" title="Product not found" :description="errorText" /></div></div>
 
-    <div v-else class="grid grid-cols-1 gap-5 px-5 pb-6 xl:grid-cols-3">
-      <div class="space-y-5 xl:col-span-2">
-        <SectionCard>
-          <div class="flex gap-5">
-            <img v-if="d.image" :src="d.image" :alt="d.product_title" class="size-36 shrink-0 rounded-4 border border-desk-border object-cover" />
-            <div v-else class="flex size-36 shrink-0 items-center justify-center rounded-4 bg-surface-gray-2">
-              <span class="lucide-package size-10 text-ink-gray-4" />
-            </div>
-            <div class="min-w-0 flex-1 space-y-4">
-              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span class="text-2xl font-semibold tabular-nums text-ink-gray-9">{{ formatCurrency(d.price) }}</span>
-                <span v-if="d.compare_at_price > d.price" class="text-ink-gray-5 line-through">{{ formatCurrency(d.compare_at_price) }}</span>
-                <span v-if="discount" class="text-sm font-medium text-ink-green-7">{{ discount }}% off</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-ink-gray-5">Stock:</span>
-                <span v-if="!d.track_inventory" class="text-ink-gray-7">Not tracked (always available)</span>
-                <template v-else>
-                  <span class="font-medium tabular-nums" :class="stock.class">{{ formatNumber(d.available_qty) }}</span>
-                  <StatusPill :status="stock.status" :label="stock.label" />
-                </template>
-              </div>
-              <InfoGrid :items="details" :columns="3" />
-            </div>
+    <FormView v-else :ribbon="d.status === 'Archived' ? { label: 'Archived', tone: 'danger' } : null">
+      <template #smart>
+        <SmartButton icon="lucide-shopping-cart" :value="activity.data?.orders_30d ?? '—'" label="Orders · 30 days" @click="tab = 'orders'" />
+        <SmartButton icon="lucide-boxes" :value="activity.data ? formatNumber(activity.data.units_30d) : '—'" label="Units sold · 30 days" />
+        <SmartButton icon="lucide-indian-rupee" :value="activity.data ? formatCurrency(activity.data.value_30d, undefined, 0) : '—'" label="Sales · 30 days" />
+        <SmartButton
+          v-if="d.track_inventory"
+          icon="lucide-warehouse"
+          :value="formatNumber(d.available_qty)"
+          label="In stock"
+          @click="tab = 'stock'"
+        />
+      </template>
+
+      <div class="mb-4 flex gap-5">
+        <div class="min-w-0 flex-1">
+          <div class="text-[13px] text-odoo-muted">{{ d.variant_title || 'Product' }}</div>
+          <div class="text-[28px] font-semibold leading-tight text-odoo-strong">{{ d.product_title || name }}</div>
+          <div class="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span class="text-[22px] font-semibold tabular-nums text-odoo-strong">{{ formatCurrency(d.price) }}</span>
+            <span v-if="d.compare_at_price > d.price" class="text-odoo-muted line-through">{{ formatCurrency(d.compare_at_price) }}</span>
+            <span v-if="discount" class="text-sm font-medium text-ink-green-7">{{ discount }}% off</span>
+            <StatusPill v-if="d.status" :status="d.status" />
           </div>
-        </SectionCard>
-
-        <SectionCard v-if="d.track_inventory && locationStock.data?.length" title="Stock by Location" flush>
-          <DataTable :columns="locationColumns" :rows="locationStock.data">
-            <template #cell-available_qty="{ row }">
-              <span :class="stockOf(row).class">{{ formatNumber(row.available_qty) }}</span>
+          <div class="mt-1 flex items-center gap-2">
+            <span class="text-odoo-muted">Stock:</span>
+            <span v-if="!d.track_inventory" class="text-odoo-text">Not tracked (always available)</span>
+            <template v-else>
+              <span class="font-medium tabular-nums" :class="stock.class">{{ formatNumber(d.available_qty) }}</span>
+              <StatusPill :status="stock.status" :label="stock.label" />
             </template>
-          </DataTable>
-        </SectionCard>
+          </div>
+        </div>
+        <!-- Odoo shows the product image at the sheet's top right -->
+        <img v-if="d.image" :src="d.image" :alt="d.product_title" class="size-28 shrink-0 rounded border border-odoo-line object-cover" />
+        <div v-else class="flex size-28 shrink-0 items-center justify-center rounded bg-odoo-hover">
+          <span class="lucide-package size-10 text-odoo-muted" aria-hidden="true" />
+        </div>
+      </div>
 
-        <SectionCard v-if="activity.data?.variants?.length" :title="`Other Variants (${activity.data.variants.length})`" flush>
-          <DataTable :columns="variantColumns" :rows="activity.data.variants" :row-route="(r) => ({ name: 'Product', params: { name: r.name } })">
-            <template #cell-available_qty="{ row }">
-              <span v-if="!row.track_inventory" class="text-ink-gray-4">Not tracked</span>
-              <span v-else :class="stockOf(row).class">{{ formatNumber(row.available_qty) }}</span>
-            </template>
-          </DataTable>
+      <div class="grid grid-cols-1 gap-x-10 gap-y-2 lg:grid-cols-3">
+        <div class="lg:col-span-2">
+          <SectionCard title="General Information">
+            <InfoGrid :items="details" :columns="2" />
+          </SectionCard>
+        </div>
+        <SectionCard title="Store Link">
+          <InfoGrid :items="storeInfo" :columns="1" />
         </SectionCard>
+      </div>
 
-        <SectionCard title="Recent Orders" flush>
+      <Notebook v-model="tab" :tabs="tabs">
+        <template #orders>
           <DataTable
+            boxed
             :columns="orderColumns"
             :rows="activity.data?.recent_orders || []"
             :loading="activity.loading"
@@ -63,31 +68,39 @@
           >
             <template #cell-sync_status="{ row }"><StatusPill :status="orderStatus(row)" /></template>
           </DataTable>
-        </SectionCard>
-      </div>
-
-      <div class="space-y-5">
-        <SectionCard title="Last 30 Days">
-          <div class="grid grid-cols-3 gap-3 text-center">
-            <div><div class="text-xl font-semibold tabular-nums">{{ activity.data?.orders_30d ?? '—' }}</div><div class="text-xs text-ink-gray-5">Orders</div></div>
-            <div><div class="text-xl font-semibold tabular-nums">{{ activity.data ? formatNumber(activity.data.units_30d) : '—' }}</div><div class="text-xs text-ink-gray-5">Units</div></div>
-            <div><div class="truncate text-xl font-semibold tabular-nums">{{ activity.data ? formatCurrency(activity.data.value_30d, undefined, 0) : '—' }}</div><div class="text-xs text-ink-gray-5">Value</div></div>
-          </div>
-          <p class="mt-3 text-xs text-ink-gray-5">Submitted orders you can see.</p>
-        </SectionCard>
-
-        <SectionCard title="Store Link">
-          <InfoGrid :items="storeInfo" :columns="1" />
-        </SectionCard>
-      </div>
-    </div>
+          <p class="mt-2 text-xs text-odoo-muted">Submitted orders you can see.</p>
+        </template>
+        <template #stock>
+          <DataTable boxed :columns="locationColumns" :rows="locationStock.data || []">
+            <template #cell-available_qty="{ row }">
+              <span :class="stockOf(row).class">{{ formatNumber(row.available_qty) }}</span>
+            </template>
+          </DataTable>
+        </template>
+        <template #variants>
+          <DataTable boxed :columns="variantColumns" :rows="activity.data?.variants || []" :row-route="(r) => ({ name: 'Product', params: { name: r.name } })">
+            <template #cell-available_qty="{ row }">
+              <span v-if="!row.track_inventory" class="text-odoo-muted">Not tracked</span>
+              <span v-else :class="stockOf(row).class">{{ formatNumber(row.available_qty) }}</span>
+            </template>
+          </DataTable>
+        </template>
+      </Notebook>
+      <template #chatter>
+        <Chatter doctype="Platform Product" :name="name" :version="d.modified || null" />
+      </template>
+    </FormView>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Button, createDocumentResource, createListResource, createResource } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
+import FormView from '@/components/odoo/FormView.vue'
+import Notebook from '@/components/odoo/Notebook.vue'
+import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -168,4 +181,12 @@ const orderColumns = [
   { key: 'amount', label: 'Amount', align: 'right', format: (v) => formatCurrency(v) },
   { key: 'sync_status', label: 'Status' },
 ]
+
+// Odoo form: the notebook's pages (stock and variants only when there are some).
+const tab = ref('orders')
+const tabs = computed(() => [
+  { value: 'orders', label: 'Recent Orders' },
+  { value: 'stock', label: 'Stock by Location', hide: !(d.value.track_inventory && locationStock.data?.length) },
+  { value: 'variants', label: `Other Variants (${activity.data?.variants?.length || 0})`, hide: !activity.data?.variants?.length },
+])
 </script>

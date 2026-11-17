@@ -1,27 +1,26 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader :title="session.retailer?.retailer_name || 'My Orders'" />
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search order" :tabs="tabs" />
+    <PageHeader :title="session.retailer?.retailer_name || 'My Orders'" :pager="pager" flush>
+      <template #search>
+        <ListFilters v-model="model" search-placeholder="Search order" :tabs="tabs" />
+      </template>
+    </PageHeader>
       <DataTable
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'MyOrder', params: { name: row.name } })"
         empty-icon="lucide-shopping-cart"
         empty-title="No orders yet"
         empty-description="Orders taken by your sales rep will appear here."
-        @load-more="list.next()"
       >
         <template #cell-status="{ row }">
           <StatusPill :status="statusOf(row)" />
         </template>
       </DataTable>
-    </div>
   </div>
 </template>
 
@@ -42,11 +41,11 @@ const tabs = [
   { label: 'Paid', value: 'paid' },
 ]
 const columns = [
-  { key: 'name', label: 'Order' },
-  { key: 'order_date', label: 'Date', format: formatDate },
+  { key: 'name', label: 'Order', sortField: 'name' },
+  { key: 'order_date', label: 'Date', sortField: 'order_date', format: formatDate },
   { key: 'invoice_no', label: 'Invoice', format: (v) => v || '—' },
-  { key: 'total_qty', label: 'Units', align: 'right', format: (v) => formatNumber(v) },
-  { key: 'grand_total', label: 'Total', align: 'right', format: (v) => formatCurrency(v) },
+  { key: 'total_qty', label: 'Units', sortField: 'total_qty', sum: true, align: 'right', format: (v) => formatNumber(v) },
+  { key: 'grand_total', label: 'Total', sortField: 'grand_total', sum: true, align: 'right', format: (v) => formatCurrency(v) },
   { key: 'status', label: 'Status' },
 ]
 
@@ -65,7 +64,7 @@ function statusOf(row) {
   return row.payment_status || 'Unpaid'
 }
 
-const { model, list, count, pageSize } = useDocList({
+const { model, list, count, pageSize, pager, sort } = useDocList({
   doctype: 'Field Order',
   fields: ['name', 'order_date', 'invoice_no', 'total_qty', 'grand_total', 'docstatus', 'payment_status'],
   orderBy: 'order_date desc, creation desc',

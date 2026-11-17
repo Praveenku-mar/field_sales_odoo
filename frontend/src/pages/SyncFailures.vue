@@ -16,13 +16,10 @@
           :columns="orderColumns"
           :rows="orders.list.data || []"
           :loading="orders.list.list.loading"
-          :total="orders.count.data"
-          :has-more="orders.list.hasNextPage"
-          v-model:page-length="orders.pageSize.value"
           :row-route="(r) => ({ name: 'Order', params: { name: r.name } })"
           empty-icon="lucide-circle-check"
           empty-title="No failed orders"
-          @load-more="orders.list.next()"
+          :pager="orders.pager"
         >
           <template #cell-retailer_name="{ row }">
             <div class="font-medium text-ink-gray-9">{{ row.retailer_name }}</div>
@@ -41,13 +38,10 @@
           :columns="retailerColumns"
           :rows="retailers.list.data || []"
           :loading="retailers.list.list.loading"
-          :total="retailers.count.data"
-          :has-more="retailers.list.hasNextPage"
-          v-model:page-length="retailers.pageSize.value"
           :row-route="(r) => ({ name: 'Retailer', params: { name: r.name } })"
           empty-icon="lucide-circle-check"
           empty-title="No failed shops"
-          @load-more="retailers.list.next()"
+          :pager="retailers.pager"
         >
           <template #cell-retailer_name="{ row }">
             <div class="font-medium text-ink-gray-9">{{ row.retailer_name }}</div>

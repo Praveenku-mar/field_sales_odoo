@@ -1,0 +1,357 @@
+/*
+ * Odoo 17/18 web client look for Agamsale.
+ *
+ * frappe-ui draws everything from CSS variables, so Odoo's palette is mapped onto them here
+ * (`:root:root` outranks frappe-ui's own `:root` block, which Tailwind's base layer emits after
+ * this import): grays from Odoo's $gray-100..900, the action teal (#017E84) as frappe-ui's blue
+ * (links, focus, info), Odoo's success / warning / danger. Component rules below then shape
+ * frappe-ui's buttons and fields like Odoo's btn-primary / btn-secondary and o_input.
+ */
+:root:root {
+  --o-brand-primary: #714b67;
+  --o-brand-primary-dark: #5c3d54;
+  --o-action: #017e84;
+  --o-action-dark: #01585c;
+  --o-page-bg: #f9fafb;
+  --o-border: #d8dadd;
+  --o-border-light: #e7e9ed;
+  --o-text: #374151;
+  --o-text-strong: #111827;
+  --o-text-muted: #5f636f;
+
+  --ink-blue-link: #017e84;
+  /* Odoo's graph palette for charts (frappe-ui reads --chart-categorical-N). */
+  --chart-categorical-1: #4ea7f2;
+  --chart-categorical-2: #ea6175;
+  --chart-categorical-3: #43c5b1;
+  --chart-categorical-4: #f4a261;
+  --chart-categorical-5: #8481dd;
+  --chart-categorical-6: #ffd86d;
+  --chart-categorical-7: #3aa4a0;
+  --chart-categorical-8: #b87de8;
+  --chart-categorical-9: #7f7f7f;
+  --chart-categorical-10: #c8d46a;
+  --surface-sidebar: #ffffff;
+  --surface-gray-1: #f9fafb;
+  --surface-gray-2: #f2f3f5;
+  --surface-gray-3: #e7e9ed;
+  --surface-gray-4: #d8dadd;
+  --surface-gray-5: #9a9ca5;
+  --surface-gray-6: #7c7f89;
+  --surface-gray-7: #5f636f;
+  --surface-gray-8: #374151;
+  --surface-gray-9: #1f2937;
+  --surface-gray-10: #111827;
+  --ink-gray-1: #f2f3f5;
+  --ink-gray-2: #e7e9ed;
+  --ink-gray-3: #d8dadd;
+  --ink-gray-4: #9a9ca5;
+  --ink-gray-5: #7c7f89;
+  --ink-gray-6: #5f636f;
+  --ink-gray-7: #4b5563;
+  --ink-gray-8: #374151;
+  --ink-gray-9: #111827;
+  --outline-gray-1: #f2f3f5;
+  --outline-gray-2: #e7e9ed;
+  --outline-gray-3: #d8dadd;
+  --outline-gray-4: #9a9ca5;
+  --outline-gray-5: #7c7f89;
+  --outline-gray-6: #5f636f;
+  --outline-gray-7: #4b5563;
+  --outline-gray-8: #374151;
+  --outline-gray-9: #111827;
+  --surface-blue-1: #e6f2f3;
+  --surface-blue-2: #cce5e6;
+  --surface-blue-3: #99cbcd;
+  --surface-blue-4: #66b2b5;
+  --surface-blue-5: #33989c;
+  --surface-blue-6: #017e84;
+  --surface-blue-7: #016c71;
+  --surface-blue-8: #01585c;
+  --surface-blue-9: #014347;
+  --surface-blue-10: #012f32;
+  --ink-blue-1: #cce5e6;
+  --ink-blue-2: #99cbcd;
+  --ink-blue-3: #66b2b5;
+  --ink-blue-4: #33989c;
+  --ink-blue-5: #017e84;
+  --ink-blue-6: #016c71;
+  --ink-blue-7: #01585c;
+  --ink-blue-8: #014347;
+  --ink-blue-9: #012f32;
+  --outline-blue-1: #cce5e6;
+  --outline-blue-2: #99cbcd;
+  --outline-blue-3: #66b2b5;
+  --outline-blue-4: #33989c;
+  --outline-blue-5: #017e84;
+  --outline-blue-6: #016c71;
+  --outline-blue-7: #01585c;
+  --outline-blue-8: #014347;
+  --outline-blue-9: #012f32;
+  --outline-blue-10: #012f32;
+  --surface-red-1: #fbedee;
+  --surface-red-2: #f6dbde;
+  --surface-red-3: #eeb7bd;
+  --surface-red-4: #e5939b;
+  --surface-red-5: #dd707a;
+  --surface-red-6: #d44c59;
+  --surface-red-7: #b9404c;
+  --surface-red-8: #9b3540;
+  --surface-red-9: #7c2a33;
+  --surface-red-10: #5e2026;
+  --ink-red-1: #f6dbde;
+  --ink-red-2: #eeb7bd;
+  --ink-red-3: #e5939b;
+  --ink-red-4: #dd707a;
+  --ink-red-5: #d44c59;
+  --ink-red-6: #b9404c;
+  --ink-red-7: #9b3540;
+  --ink-red-8: #7c2a33;
+  --ink-red-9: #5e2026;
+  --outline-red-1: #f6dbde;
+  --outline-red-2: #eeb7bd;
+  --outline-red-3: #e5939b;
+  --outline-red-4: #dd707a;
+  --outline-red-5: #d44c59;
+  --outline-red-6: #b9404c;
+  --outline-red-7: #9b3540;
+  --outline-red-8: #7c2a33;
+  --outline-red-9: #5e2026;
+  --outline-red-10: #5e2026;
+  --surface-green-1: #eaf6ed;
+  --surface-green-2: #d4edda;
+  --surface-green-3: #a9dcb5;
+  --surface-green-4: #7eca90;
+  --surface-green-5: #53b96b;
+  --surface-green-6: #28a745;
+  --surface-green-7: #208a39;
+  --surface-green-8: #1a6f2e;
+  --surface-green-9: #145523;
+  --surface-green-10: #0e3b18;
+  --ink-green-1: #d4edda;
+  --ink-green-2: #a9dcb5;
+  --ink-green-3: #7eca90;
+  --ink-green-4: #53b96b;
+  --ink-green-5: #28a745;
+  --ink-green-6: #208a39;
+  --ink-green-7: #1a6f2e;
+  --ink-green-8: #145523;
+  --ink-green-9: #0e3b18;
+  --outline-green-1: #d4edda;
+  --outline-green-2: #a9dcb5;
+  --outline-green-3: #7eca90;
+  --outline-green-4: #53b96b;
+  --outline-green-5: #28a745;
+  --outline-green-6: #208a39;
+  --outline-green-7: #1a6f2e;
+  --outline-green-8: #145523;
+  --outline-green-9: #0e3b18;
+  --outline-green-10: #0e3b18;
+  --surface-amber-1: #fdf5e6;
+  --surface-amber-2: #fbebcc;
+  --surface-amber-3: #f6d799;
+  --surface-amber-4: #f2c466;
+  --surface-amber-5: #edb033;
+  --surface-amber-6: #e99d00;
+  --surface-amber-7: #c88700;
+  --surface-amber-8: #a36e00;
+  --surface-amber-9: #7e5500;
+  --surface-amber-10: #5a3d00;
+  --ink-amber-1: #fbebcc;
+  --ink-amber-2: #f6d799;
+  --ink-amber-3: #f2c466;
+  --ink-amber-4: #edb033;
+  --ink-amber-5: #e99d00;
+  --ink-amber-6: #c88700;
+  --ink-amber-7: #a36e00;
+  --ink-amber-8: #7e5500;
+  --ink-amber-9: #5a3d00;
+  --outline-amber-1: #fbebcc;
+  --outline-amber-2: #f6d799;
+  --outline-amber-3: #f2c466;
+  --outline-amber-4: #edb033;
+  --outline-amber-5: #e99d00;
+  --outline-amber-6: #c88700;
+  --outline-amber-7: #a36e00;
+  --outline-amber-8: #7e5500;
+  --outline-amber-9: #5a3d00;
+  --outline-amber-10: #5a3d00;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ---- Buttons: btn-primary (purple), btn-secondary (light gray, no border) ---- */
+button.h-7,
+a.h-7 {
+  height: 31px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+button.bg-surface-gray-10,
+a.bg-surface-gray-10 {
+  background-color: var(--o-brand-primary);
+  color: #fff;
+}
+button.bg-surface-gray-10:hover,
+a.bg-surface-gray-10:hover {
+  background-color: var(--o-brand-primary-dark);
+}
+button[role='switch'].bg-surface-gray-10 {
+  background-color: var(--o-action);
+}
+button.bg-surface-gray-2:not([role='tab']):not([role='radio']),
+a.bg-surface-gray-2 {
+  background-color: var(--o-border-light);
+  color: var(--o-text);
+}
+button.bg-surface-gray-2:not([role='tab']):not([role='radio']):hover,
+a.bg-surface-gray-2:hover {
+  background-color: var(--o-border);
+}
+
+/* ---- Fields: Odoo's o_input (no box, a bottom border that turns teal on focus) ---- */
+input.bg-surface-gray-2,
+textarea.bg-surface-gray-2,
+select.bg-surface-gray-2,
+button[role='combobox'].bg-surface-gray-2,
+.form-input,
+.form-textarea,
+.form-select {
+  background-color: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--o-border);
+  border-radius: 0;
+  color: var(--o-text-strong);
+  box-shadow: none;
+}
+input.bg-surface-gray-2:hover,
+textarea.bg-surface-gray-2:hover,
+select.bg-surface-gray-2:hover,
+button[role='combobox'].bg-surface-gray-2:hover {
+  background-color: transparent;
+  border-bottom-color: var(--o-text-muted);
+}
+input.bg-surface-gray-2:focus,
+textarea.bg-surface-gray-2:focus,
+select.bg-surface-gray-2:focus,
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  background-color: transparent;
+  border-bottom-color: var(--o-action);
+  box-shadow: 0 1px 0 0 var(--o-action);
+  outline: 2px solid transparent;
+}
+/* Multi-line fields keep a light box, as Odoo's text fields do. */
+textarea.bg-surface-gray-2 {
+  border: 1px solid var(--o-border);
+  border-radius: 4px;
+}
+
+/* ---- Dialogs (Odoo modal: header and footer rules, 8px corners) ---- */
+.dialog-content {
+  border-radius: 8px;
+}
+.dialog-content [class*='text-2xl-semibold'] {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+
+/* ---- Shared Odoo utility classes ---- */
+.o-link {
+  color: var(--o-action);
+}
+.o-link:hover {
+  color: var(--o-action-dark);
+}
+
+/* ---- Inside a form sheet: section cards read as Odoo's group headings ---- */
+.o-form-sheet .fs-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.o-form-sheet .fs-card > header {
+  padding: 0 0 4px;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--o-border);
+}
+.o-form-sheet .fs-card > header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+.o-form-sheet .fs-card > div {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* ---- Settings (o_settings): section titles as grey bands, setting boxes ---- */
+.o-settings .fs-card {
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+.o-settings section {
+  padding: 0 0 1.25rem !important;
+  border-top: 0 !important;
+}
+.o-settings section h3 {
+  margin: 0 -2rem 1rem;
+  padding: 0.5rem 2rem;
+  background-color: var(--o-border-light);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+.o-settings section > .grid,
+.o-settings section > div > .grid {
+  margin-top: 0.5rem;
+  column-gap: 3rem;
+}
+/* A checkbox setting: bold title, muted description under it (o_setting_box). */
+.o-settings label {
+  font-weight: 600;
+  color: var(--o-text-strong);
+}
+.o-settings p.text-sm,
+.o-settings .text-p-sm {
+  color: var(--o-text-muted);
+}
+@media (max-width: 639px) {
+  .o-settings section h3 {
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* ---- Report tables drawn by their pages: Odoo's list view look ---- */
+.o-list table {
+  font-size: 13px;
+}
+.o-list thead tr {
+  background-color: #fff !important;
+  border-bottom: 2px solid var(--o-border) !important;
+}
+.o-list thead th {
+  color: var(--o-text-strong);
+  font-weight: 600;
+  font-size: 13px;
+}
+.o-list tbody tr {
+  border-bottom: 1px solid var(--o-border-light);
+}
+.o-list tbody tr:hover {
+  background-color: #f2f3f5;
+}
+.o-list tfoot tr {
+  border-top: 1px solid var(--o-border);
+  font-weight: 600;
+  color: var(--o-text-strong);
+}

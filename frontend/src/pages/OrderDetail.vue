@@ -1,22 +1,11 @@
 <template>
   <div>
-    <PageHeader :title="name" :status="d.name ? orderStatus(d) : null">
+    <PageHeader :title="name" :breadcrumbs="[{ label: 'Orders', to: { name: 'Orders' } }]">
       <template #actions>
-        <Dropdown v-if="d.name" :options="moreActions" align="end">
-          <Button variant="ghost" icon="lucide-ellipsis" aria-label="More actions" />
+        <Dropdown v-if="d.name" :options="moreActions" align="start">
+          <Button variant="ghost" icon="lucide-settings" aria-label="Actions" title="Actions" />
         </Dropdown>
-        <Button
-          v-if="d.name"
-          variant="ghost"
-          label="Preview"
-          icon-left="lucide-eye"
-          :href="`/printview?doctype=Field%20Order&name=${encodeURIComponent(name)}&format=Field%20Sales%20Order`"
-          target="_blank"
-        />
-        <template v-if="editable">
-          <Button v-if="dirty" label="Save" variant="solid" :loading="saving" @click="save" />
-          <Button v-else label="Submit" variant="solid" :loading="saving" @click="confirmSubmit" />
-        </template>
+        <Button v-if="editable && dirty" label="Save" variant="solid" :loading="saving" @click="save" />
       </template>
     </PageHeader>
 
@@ -24,10 +13,53 @@
 
     <div v-else-if="!form" class="flex justify-center py-16 text-ink-gray-5"><LoadingIndicator class="size-5" /></div>
 
-    <div v-else class="grid grid-cols-1 items-start gap-4 px-5 pb-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <!-- Order -->
-      <div class="fs-card">
-        <div class="grid grid-cols-1 gap-4 border-b border-desk-border p-5 sm:grid-cols-2 lg:grid-cols-4">
+    <FormView v-else :stages="stages" :current="stage" :ribbon="ribbon">
+      <template #statusbar>
+        <Button v-if="editable && !dirty" label="Submit" variant="solid" :loading="saving" @click="confirmSubmit" />
+        <Button
+          v-if="d.docstatus === 1 && d.sync_status === 'Failed'"
+          label="Retry Sync"
+          icon-left="lucide-refresh-cw"
+          :loading="retrying"
+          @click="retrySync"
+        />
+        <Button
+          v-if="d.name"
+          label="Preview"
+          icon-left="lucide-eye"
+          :href="`/printview?doctype=Field%20Order&name=${encodeURIComponent(name)}&format=Field%20Sales%20Order`"
+          target="_blank"
+        />
+      </template>
+      <template v-if="d.docstatus === 1 && d.sync_status === 'Failed'" #alerts>
+        <div class="flex gap-2 rounded border border-[#eeb7bd] bg-[#fbedee] px-3 py-2.5 text-[#9b3540]" role="alert">
+          <span class="lucide-circle-alert mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div class="min-w-0 break-words"><b class="font-semibold">Sync failed.</b> {{ d.sync_error || 'The store did not accept the order.' }}</div>
+        </div>
+      </template>
+      <template #smart>
+        <SmartButton
+          icon="lucide-store"
+          :value="form.retailer_name || form.retailer || '—'"
+          label="Shop"
+          :to="form.retailer ? { name: 'Retailer', params: { name: form.retailer } } : null"
+        />
+        <SmartButton v-if="form.visit" icon="lucide-map-pin-check" :value="form.visit" label="Visit" :to="{ name: 'Visit', params: { name: form.visit } }" />
+        <SmartButton
+          v-if="d.docstatus === 1"
+          icon="lucide-credit-card"
+          :value="formatCurrency(pay.amount_paid || 0)"
+          :label="pay.payment_status || 'Unpaid'"
+          @click="tab = 'payment'"
+        />
+        <SmartButton v-if="storeUrl" icon="lucide-external-link" :value="d.store_order_name || 'Order'" :label="`In ${platform}`" :href="storeUrl" />
+      </template>
+
+      <div class="mb-4">
+        <div class="text-[13px] text-odoo-muted">{{ editable ? 'Draft order' : 'Field Order' }}</div>
+        <div class="text-[28px] font-semibold leading-tight text-odoo-strong">{{ name }}</div>
+      </div>
+        <div class="grid grid-cols-1 gap-x-10 gap-y-2 sm:grid-cols-2">
           <Field label="Shop" required>
             <LinkField
               v-if="editable"
@@ -71,377 +103,382 @@
           </Field>
         </div>
 
-        <!-- Items -->
-        <div class="space-y-3 border-b border-desk-border p-5">
-          <div class="flex items-center gap-2">
-            <h2 class="text-base font-semibold text-ink-gray-9">Items</h2>
-            <span class="text-ink-gray-5">{{ form.items.length }}</span>
-            <Button
-              v-if="editable && selected.size"
-              class="ml-auto"
-              theme="red"
-              :label="`Delete ${selected.size} ${selected.size === 1 ? 'row' : 'rows'}`"
-              icon-left="lucide-trash-2"
-              @click="deleteSelected"
-            />
-          </div>
+      <Notebook v-model="tab" :tabs="tabs">
+        <template #lines>
+            <!-- Items -->
+            <div class="space-y-3">
+              <div class="flex items-center gap-2">
+                <h2 class="text-base font-semibold text-ink-gray-9">Items</h2>
+                <span class="text-ink-gray-5">{{ form.items.length }}</span>
+                <Button
+                  v-if="editable && selected.size"
+                  class="ml-auto"
+                  theme="red"
+                  :label="`Delete ${selected.size} ${selected.size === 1 ? 'row' : 'rows'}`"
+                  icon-left="lucide-trash-2"
+                  @click="deleteSelected"
+                />
+              </div>
 
-          <!-- Search-to-add: matches the catalog on the server, picking adds the row.
-               The results panel is in flow — it makes room instead of overlapping
-               the items table. -->
-          <div v-if="editable">
-            <div class="flex items-center gap-2">
-              <TextInput
-                ref="quickSearchEl"
-                v-model="quickQuery"
-                class="flex-1"
-                placeholder="Search a product to add — name, SKU or barcode"
-                @keydown.enter.prevent="quickRows.length && quickAdd(quickRows[0])"
-                @blur="quickOpen = false"
-                @focus="quickSearch.data && (quickOpen = true)"
-              >
-                <template #prefix><span class="lucide-search size-4 text-ink-gray-5" /></template>
-              </TextInput>
-              <!-- No camera inside Shopify admin (iframe) -->
-          <Button v-if="!embedded" icon="lucide-scan-barcode" tooltip="Scan barcode" aria-label="Scan barcode" @click="scanOpen = true" />
-            </div>
-            <ul
-              v-if="quickOpen && (quickSearch.loading || quickRows.length)"
-              class="mt-1 max-h-72 overflow-y-auto rounded-4 border border-outline-gray-2 bg-surface-base py-1"
-            >
-              <li v-if="quickSearch.loading" class="flex justify-center px-3 py-3"><LoadingIndicator class="size-4 text-ink-gray-5" /></li>
-              <li
-                v-for="p in quickRows"
-                :key="p.name"
-                class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-surface-gray-1"
-                @mousedown.prevent="quickAdd(p)"
-                @mouseenter="quickActive = p.name"
-                @mouseleave="quickActive = null"
-                :class="quickActive === p.name && 'bg-surface-gray-1'"
-              >
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-ink-gray-9">{{ productLabel(p) }}</span>
-                  <span class="block truncate font-mono text-xs text-ink-gray-5">{{ p.sku || p.name }}</span>
-                </span>
-                <span class="shrink-0 text-right">
-                  <span class="block tabular-nums">{{ formatCurrency(p.price) }}</span>
-                  <span class="block text-xs" :class="p.track_inventory && (listedQty(p) ?? 1) <= 0 ? 'text-ink-red-5' : 'text-ink-gray-5'">
-                    {{ stockText(p, 'in stock', 'not tracked') }}
-                  </span>
-                </span>
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="warningRows.length" class="flex items-start gap-2 rounded-4 bg-surface-red-2 px-3 py-2.5 text-ink-red-6">
-            <span class="lucide-triangle-alert mt-px size-4 shrink-0" />
-            <span>
-              <b>{{ warningRows.length }} {{ warningRows.length === 1 ? 'item exceeds' : 'items exceed' }} available stock</b>
-              <template v-if="syncInfo.data?.location_name"> at {{ syncInfo.data.location_name }}</template>.
-              {{ editable ? 'Reduce the quantity or split the order before submitting.' : 'Cancel the order and amend it with lower quantities.' }}
-            </span>
-          </div>
-
-          <div class="overflow-x-auto rounded-4 border border-outline-gray-2">
-            <table class="w-full min-w-[720px] border-collapse text-left">
-              <thead class="bg-surface-gray-1 text-ink-gray-5">
-                <tr>
-                  <th class="w-10 border-b border-outline-gray-2 px-3 py-2">
-                    <Checkbox
-                      v-if="editable"
-                      :model-value="allSelected"
-                      :indeterminate="selected.size > 0 && !allSelected"
-                      aria-label="Select all rows"
-                      @update:model-value="toggleAll"
-                    />
-                  </th>
-                  <th class="cell-head">Product</th>
-                  <th class="cell-head w-40">SKU</th>
-                  <th class="cell-head w-32 whitespace-nowrap text-right">Available Qty</th>
-                  <th class="cell-head w-24 text-right">Qty</th>
-                  <th class="cell-head w-32 text-right">Rate</th>
-                  <th class="cell-head w-32 border-r-0 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="!form.items.length">
-                  <td colspan="7" class="px-3 py-6 text-center text-ink-gray-5">No items yet</td>
-                </tr>
-                <tr
-                  v-for="row in form.items"
-                  :key="row._key"
-                  class="border-b border-outline-gray-2 last:border-b-0"
-                  :class="isShort(row) ? 'bg-surface-red-1' : 'hover:bg-surface-gray-1'"
+              <!-- Search-to-add: matches the catalog on the server, picking adds the row.
+                   The results panel is in flow — it makes room instead of overlapping
+                   the items table. -->
+              <div v-if="editable">
+                <div class="flex items-center gap-2">
+                  <TextInput
+                    ref="quickSearchEl"
+                    v-model="quickQuery"
+                    class="flex-1"
+                    placeholder="Search a product to add — name, SKU or barcode"
+                    @keydown.enter.prevent="quickRows.length && quickAdd(quickRows[0])"
+                    @blur="quickOpen = false"
+                    @focus="quickSearch.data && (quickOpen = true)"
+                  >
+                    <template #prefix><span class="lucide-search size-4 text-ink-gray-5" /></template>
+                  </TextInput>
+                  <!-- No camera inside Shopify admin (iframe) -->
+              <Button v-if="!embedded" icon="lucide-scan-barcode" tooltip="Scan barcode" aria-label="Scan barcode" @click="scanOpen = true" />
+                </div>
+                <ul
+                  v-if="quickOpen && (quickSearch.loading || quickRows.length)"
+                  class="mt-1 max-h-72 overflow-y-auto rounded-4 border border-outline-gray-2 bg-surface-base py-1"
                 >
-                  <td class="px-3 py-1.5">
-                    <Checkbox
-                      v-if="editable"
-                      :model-value="selected.has(row._key)"
-                      :aria-label="`Select row ${rowLabel(row)}`"
-                      @update:model-value="toggleRow(row._key)"
-                    />
-                  </td>
-                  <td class="cell py-1">
-                    <LinkField
-                      v-if="editable"
-                      v-model="row.product"
-                      class="w-full"
-                      variant="ghost"
-                      doctype="Platform Product"
-                      :label-of="productLabel"
-                      description-field="sku"
-                      :fields="PRODUCT_FIELDS"
-                      :search-fields="['product_title', 'variant_title', 'sku', 'barcode']"
-                      :filters="{ status: 'Active' }"
-                      :exclude="productNames"
-                      :label="productLabel(row)"
-                      placeholder="Select product"
-                      @select="(p) => setProduct(row, p)"
-                    />
-                    <div v-else class="text-ink-gray-9">{{ productLabel(row) }}</div>
-                    <div v-if="isShort(row)" class="mt-0.5 flex items-center gap-1 text-xs text-ink-red-6">
-                      <span class="lucide-triangle-alert size-3" />
-                      Exceeds stock — only {{ formatNumber(row.available_qty) }} available
-                    </div>
-                    <div v-if="editable && priceChange(row) != null" class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-amber-7">
-                      <span class="flex items-center gap-1">
-                        <span class="lucide-tag size-3" />
-                        Price changed: {{ formatCurrency(row.rate) }} → {{ formatCurrency(priceChange(row)) }}
+                  <li v-if="quickSearch.loading" class="flex justify-center px-3 py-3"><LoadingIndicator class="size-4 text-ink-gray-5" /></li>
+                  <li
+                    v-for="p in quickRows"
+                    :key="p.name"
+                    class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-surface-gray-1"
+                    @mousedown.prevent="quickAdd(p)"
+                    @mouseenter="quickActive = p.name"
+                    @mouseleave="quickActive = null"
+                    :class="quickActive === p.name && 'bg-surface-gray-1'"
+                  >
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-ink-gray-9">{{ productLabel(p) }}</span>
+                      <span class="block truncate font-mono text-xs text-ink-gray-5">{{ p.sku || p.name }}</span>
+                    </span>
+                    <span class="shrink-0 text-right">
+                      <span class="block tabular-nums">{{ formatCurrency(p.price) }}</span>
+                      <span class="block text-xs" :class="p.track_inventory && (listedQty(p) ?? 1) <= 0 ? 'text-ink-red-5' : 'text-ink-gray-5'">
+                        {{ stockText(p, 'in stock', 'not tracked') }}
                       </span>
-                      <!-- For a rep the server sets a changed rate to the product's current price: the same thing. -->
-                      <button type="button" class="font-medium text-ink-gray-9 underline underline-offset-2" @click="applyNewPrice(row)">
-                        Apply new price
-                      </button>
-                    </div>
-                  </td>
-                  <td class="cell font-mono text-xs text-ink-gray-6">{{ row.sku || '—' }}</td>
-                  <td class="cell text-right tabular-nums">
-                    <Tooltip :text="tracks(row) ? null : 'Stock is not tracked for this product'" :disabled="tracks(row)">
-                      <span :class="!tracks(row) && 'text-ink-gray-4'">{{ tracks(row) ? formatNumber(row.available_qty) : '—' }}</span>
-                    </Tooltip>
-                  </td>
-                  <td class="cell p-0 text-right" :class="isShort(row) && 'outline outline-1 -outline-offset-1 outline-[--ink-red-5]'">
-                    <input
-                      v-if="editable"
-                      v-model.number="row.qty"
-                      type="number"
-                      min="1"
-                      class="num-input"
-                      :class="isShort(row) && 'text-ink-red-6'"
-                      :aria-label="`Quantity for ${rowLabel(row)}`"
-                    />
-                    <span v-else class="block px-3 tabular-nums" :class="isShort(row) && 'text-ink-red-6'">{{ formatNumber(row.qty, 3) }}</span>
-                  </td>
-                  <td class="cell p-0 text-right">
-                    <!-- Only managers may set a rate other than the product's price (the server resets it otherwise). -->
-                    <input
-                      v-if="editable && session.isManager"
-                      v-model.number="row.rate"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      class="num-input"
-                      :aria-label="`Rate for ${rowLabel(row)}`"
-                    />
-                    <span v-else class="block px-3 tabular-nums">{{ formatCurrency(row.rate) }}</span>
-                  </td>
-                  <td class="cell border-r-0 text-right tabular-nums">{{ formatCurrency(amountOf(row)) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div v-if="editable" class="flex gap-2">
-            <Button label="Add Row" icon-left="lucide-plus" @click="addRow()" />
-            <Button label="Add Multiple" @click="pickerOpen = true" />
-          </div>
-        </div>
-
-        <!-- Totals -->
-        <div class="p-5">
-          <h2 class="mb-3 text-base font-semibold text-ink-gray-9">Totals</h2>
-          <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <Field label="Total Quantity">
-              <div class="flex h-7 items-center rounded-4 bg-surface-gray-2 px-2 tabular-nums text-ink-gray-8">
-                {{ formatNumber(totals.qty, 3) }}
+                    </span>
+                  </li>
+                </ul>
               </div>
-            </Field>
-            <dl class="space-y-2.5">
-              <div class="flex justify-between"><dt class="text-ink-gray-6">Net Total</dt><dd class="tabular-nums">{{ formatCurrency(totals.net) }}</dd></div>
-              <div class="flex justify-between"><dt class="text-ink-gray-6">GST {{ formatNumber(form.tax_percent, 2) }}%</dt><dd class="tabular-nums">{{ formatCurrency(totals.tax) }}</dd></div>
-              <div v-if="editable" class="flex items-start justify-between gap-3">
-                <dt class="pt-1 text-ink-gray-6">Discount %</dt>
-                <dd class="text-right">
-                  <div class="flex items-center justify-end gap-3">
-                    <TextInput
-                      v-model="form.discount_percent"
-                      type="number"
-                      min="0"
-                      max="100"
-                      class="w-20 [&_input]:text-right"
-                      aria-label="Discount %"
-                    />
-                    <span class="w-24 tabular-nums">{{ formatCurrency(totals.discount) }}</span>
+
+              <div v-if="warningRows.length" class="flex items-start gap-2 rounded-4 bg-surface-red-2 px-3 py-2.5 text-ink-red-6">
+                <span class="lucide-triangle-alert mt-px size-4 shrink-0" />
+                <span>
+                  <b>{{ warningRows.length }} {{ warningRows.length === 1 ? 'item exceeds' : 'items exceed' }} available stock</b>
+                  <template v-if="syncInfo.data?.location_name"> at {{ syncInfo.data.location_name }}</template>.
+                  {{ editable ? 'Reduce the quantity or split the order before submitting.' : 'Cancel the order and amend it with lower quantities.' }}
+                </span>
+              </div>
+
+              <div class="overflow-x-auto rounded-4 border border-outline-gray-2">
+                <table class="w-full min-w-[720px] border-collapse text-left">
+                  <thead class="bg-surface-gray-1 text-ink-gray-5">
+                    <tr>
+                      <th class="w-10 border-b border-outline-gray-2 px-3 py-2">
+                        <Checkbox
+                          v-if="editable"
+                          :model-value="allSelected"
+                          :indeterminate="selected.size > 0 && !allSelected"
+                          aria-label="Select all rows"
+                          @update:model-value="toggleAll"
+                        />
+                      </th>
+                      <th class="cell-head">Product</th>
+                      <th class="cell-head w-40">SKU</th>
+                      <th class="cell-head w-32 whitespace-nowrap text-right">Available Qty</th>
+                      <th class="cell-head w-24 text-right">Qty</th>
+                      <th class="cell-head w-32 text-right">Rate</th>
+                      <th class="cell-head w-32 border-r-0 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="!form.items.length">
+                      <td colspan="7" class="px-3 py-6 text-center text-ink-gray-5">No items yet</td>
+                    </tr>
+                    <tr
+                      v-for="row in form.items"
+                      :key="row._key"
+                      class="border-b border-outline-gray-2 last:border-b-0"
+                      :class="isShort(row) ? 'bg-surface-red-1' : 'hover:bg-surface-gray-1'"
+                    >
+                      <td class="px-3 py-1.5">
+                        <Checkbox
+                          v-if="editable"
+                          :model-value="selected.has(row._key)"
+                          :aria-label="`Select row ${rowLabel(row)}`"
+                          @update:model-value="toggleRow(row._key)"
+                        />
+                      </td>
+                      <td class="cell py-1">
+                        <LinkField
+                          v-if="editable"
+                          v-model="row.product"
+                          class="w-full"
+                          variant="ghost"
+                          doctype="Platform Product"
+                          :label-of="productLabel"
+                          description-field="sku"
+                          :fields="PRODUCT_FIELDS"
+                          :search-fields="['product_title', 'variant_title', 'sku', 'barcode']"
+                          :filters="{ status: 'Active' }"
+                          :exclude="productNames"
+                          :label="productLabel(row)"
+                          placeholder="Select product"
+                          @select="(p) => setProduct(row, p)"
+                        />
+                        <div v-else class="text-ink-gray-9">{{ productLabel(row) }}</div>
+                        <div v-if="isShort(row)" class="mt-0.5 flex items-center gap-1 text-xs text-ink-red-6">
+                          <span class="lucide-triangle-alert size-3" />
+                          Exceeds stock — only {{ formatNumber(row.available_qty) }} available
+                        </div>
+                        <div v-if="editable && priceChange(row) != null" class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-amber-7">
+                          <span class="flex items-center gap-1">
+                            <span class="lucide-tag size-3" />
+                            Price changed: {{ formatCurrency(row.rate) }} → {{ formatCurrency(priceChange(row)) }}
+                          </span>
+                          <!-- For a rep the server sets a changed rate to the product's current price: the same thing. -->
+                          <button type="button" class="font-medium text-ink-gray-9 underline underline-offset-2" @click="applyNewPrice(row)">
+                            Apply new price
+                          </button>
+                        </div>
+                      </td>
+                      <td class="cell font-mono text-xs text-ink-gray-6">{{ row.sku || '—' }}</td>
+                      <td class="cell text-right tabular-nums">
+                        <Tooltip :text="tracks(row) ? null : 'Stock is not tracked for this product'" :disabled="tracks(row)">
+                          <span :class="!tracks(row) && 'text-ink-gray-4'">{{ tracks(row) ? formatNumber(row.available_qty) : '—' }}</span>
+                        </Tooltip>
+                      </td>
+                      <td class="cell p-0 text-right" :class="isShort(row) && 'outline outline-1 -outline-offset-1 outline-[--ink-red-5]'">
+                        <input
+                          v-if="editable"
+                          v-model.number="row.qty"
+                          type="number"
+                          min="1"
+                          class="num-input"
+                          :class="isShort(row) && 'text-ink-red-6'"
+                          :aria-label="`Quantity for ${rowLabel(row)}`"
+                        />
+                        <span v-else class="block px-3 tabular-nums" :class="isShort(row) && 'text-ink-red-6'">{{ formatNumber(row.qty, 3) }}</span>
+                      </td>
+                      <td class="cell p-0 text-right">
+                        <!-- Only managers may set a rate other than the product's price (the server resets it otherwise). -->
+                        <input
+                          v-if="editable && session.isManager"
+                          v-model.number="row.rate"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="num-input"
+                          :aria-label="`Rate for ${rowLabel(row)}`"
+                        />
+                        <span v-else class="block px-3 tabular-nums">{{ formatCurrency(row.rate) }}</span>
+                      </td>
+                      <td class="cell border-r-0 text-right tabular-nums">{{ formatCurrency(amountOf(row)) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div v-if="editable" class="flex gap-2">
+                <Button label="Add Row" icon-left="lucide-plus" @click="addRow()" />
+                <Button label="Add Multiple" @click="pickerOpen = true" />
+              </div>
+            </div>
+            <!-- Totals -->
+            <div class="mt-6 border-t border-odoo-hover pt-4">
+              <h2 class="mb-3 text-base font-semibold text-ink-gray-9">Totals</h2>
+              <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <Field label="Total Quantity">
+                  <div class="flex h-7 items-center rounded-4 bg-surface-gray-2 px-2 tabular-nums text-ink-gray-8">
+                    {{ formatNumber(totals.qty, 3) }}
                   </div>
-                  <p class="mt-1 text-xs" :class="overDiscountLimit ? 'text-ink-red-5' : 'text-ink-gray-5'">{{ discountHint }}</p>
-                </dd>
-              </div>
-              <div v-else class="flex justify-between">
-                <dt class="text-ink-gray-6">Discount ({{ formatNumber(form.discount_percent || 0, 2) }}%)</dt>
-                <dd class="tabular-nums">{{ formatCurrency(form.discount_amount || 0) }}</dd>
-              </div>
-              <div class="flex justify-between border-t border-outline-gray-2 pt-3 text-lg font-semibold text-ink-gray-9">
-                <dt>Grand Total</dt><dd class="tabular-nums">{{ formatCurrency(totals.grand) }}</dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-      </div>
-
-      <!-- Side column: store sync, payment, invoice -->
-      <div class="space-y-4">
-        <!-- Store sync -->
-        <div class="fs-card">
-          <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
-            <span class="lucide-shopping-bag size-4 text-ink-gray-7" />
-            <h2 class="flex-1 text-base font-semibold text-ink-gray-9">{{ platform }} Sync</h2>
-            <StatusPill :status="orderStatus(d)" />
-          </div>
-          <dl class="divide-y divide-outline-gray-1 px-4">
-            <div v-for="item in syncRows" :key="item.label" class="flex items-center justify-between gap-3 py-2.5">
-              <dt class="text-ink-gray-6">{{ item.label }}</dt>
-              <dd class="truncate text-right" :class="item.muted ? 'text-ink-gray-5' : 'text-ink-gray-8'">
-                <a v-if="item.href" :href="item.href" target="_blank" class="inline-flex items-center gap-1 text-ink-blue-6 hover:underline">
-                  {{ item.value }}<span class="lucide-external-link size-3.5" />
-                </a>
-                <template v-else>{{ item.value }}</template>
-              </dd>
-            </div>
-          </dl>
-          <div class="space-y-2 p-4 pt-1">
-            <p v-if="d.docstatus === 0" class="text-ink-gray-5">The order is sent to the store when it is submitted.</p>
-            <div v-if="d.docstatus === 1 && d.sync_status === 'Failed'" class="flex gap-2 rounded-4 bg-surface-red-2 px-3 py-2.5 text-ink-red-6">
-              <span class="lucide-circle-alert mt-px size-4 shrink-0" />
-              <div class="min-w-0 break-words">
-                <div class="font-semibold">Sync failed</div>
-                <div v-if="d.sync_error">{{ d.sync_error }}</div>
+                </Field>
+                <dl class="space-y-2.5">
+                  <div class="flex justify-between"><dt class="text-ink-gray-6">Net Total</dt><dd class="tabular-nums">{{ formatCurrency(totals.net) }}</dd></div>
+                  <div class="flex justify-between"><dt class="text-ink-gray-6">GST {{ formatNumber(form.tax_percent, 2) }}%</dt><dd class="tabular-nums">{{ formatCurrency(totals.tax) }}</dd></div>
+                  <div v-if="editable" class="flex items-start justify-between gap-3">
+                    <dt class="pt-1 text-ink-gray-6">Discount %</dt>
+                    <dd class="text-right">
+                      <div class="flex items-center justify-end gap-3">
+                        <TextInput
+                          v-model="form.discount_percent"
+                          type="number"
+                          min="0"
+                          max="100"
+                          class="w-20 [&_input]:text-right"
+                          aria-label="Discount %"
+                        />
+                        <span class="w-24 tabular-nums">{{ formatCurrency(totals.discount) }}</span>
+                      </div>
+                      <p class="mt-1 text-xs" :class="overDiscountLimit ? 'text-ink-red-5' : 'text-ink-gray-5'">{{ discountHint }}</p>
+                    </dd>
+                  </div>
+                  <div v-else class="flex justify-between">
+                    <dt class="text-ink-gray-6">Discount ({{ formatNumber(form.discount_percent || 0, 2) }}%)</dt>
+                    <dd class="tabular-nums">{{ formatCurrency(form.discount_amount || 0) }}</dd>
+                  </div>
+                  <div class="flex justify-between border-t border-outline-gray-2 pt-3 text-lg font-semibold text-ink-gray-9">
+                    <dt>Grand Total</dt><dd class="tabular-nums">{{ formatCurrency(totals.grand) }}</dd>
+                  </div>
+                </dl>
               </div>
             </div>
-            <Button
-              v-if="d.docstatus === 1 && d.sync_status === 'Failed'"
-              class="w-full"
-              variant="solid"
-              label="Retry Sync"
-              icon-left="lucide-refresh-cw"
-              :loading="retrying"
-              @click="retrySync"
-            />
-            <Button
-              v-if="session.isManager && d.docstatus !== 0"
-              class="w-full"
-              label="View Sync Log"
-              :route="{ name: 'SyncLogs', query: { reference: name } }"
-            />
-          </div>
-        </div>
-
-        <!-- Payment status, manual collection and payment links -->
-        <div v-if="d.docstatus === 1" class="fs-card">
-          <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
-            <span class="lucide-credit-card size-4 text-ink-gray-7" />
-            <h2 class="flex-1 text-base font-semibold text-ink-gray-9">Payment</h2>
-            <StatusPill :status="pay.payment_status || 'Unpaid'" />
-          </div>
-          <dl class="divide-y divide-outline-gray-1 px-4">
-            <div v-for="item in paymentRows" :key="item.label" class="flex items-center justify-between gap-3 py-2.5">
-              <dt class="shrink-0 text-ink-gray-6">{{ item.label }}</dt>
-              <dd class="min-w-0 truncate text-right" :class="item.muted ? 'text-ink-gray-5' : 'text-ink-gray-8'">
-                <a v-if="item.href" :href="item.href" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-ink-blue-6 hover:underline">
-                  {{ item.value }}<span class="lucide-external-link size-3.5" />
-                </a>
-                <template v-else>{{ item.value }}</template>
-              </dd>
+        </template>
+        <template #sync>
+            <!-- Store sync -->
+            <div class="fs-card max-w-xl">
+              <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
+                <span class="lucide-shopping-bag size-4 text-ink-gray-7" />
+                <h2 class="flex-1 text-base font-semibold text-ink-gray-9">{{ platform }} Sync</h2>
+                <StatusPill :status="orderStatus(d)" />
+              </div>
+              <dl class="divide-y divide-outline-gray-1 px-4">
+                <div v-for="item in syncRows" :key="item.label" class="flex items-center justify-between gap-3 py-2.5">
+                  <dt class="text-ink-gray-6">{{ item.label }}</dt>
+                  <dd class="truncate text-right" :class="item.muted ? 'text-ink-gray-5' : 'text-ink-gray-8'">
+                    <a v-if="item.href" :href="item.href" target="_blank" class="inline-flex items-center gap-1 text-ink-blue-6 hover:underline">
+                      {{ item.value }}<span class="lucide-external-link size-3.5" />
+                    </a>
+                    <template v-else>{{ item.value }}</template>
+                  </dd>
+                </div>
+              </dl>
+              <div class="space-y-2 p-4 pt-1">
+                <p v-if="d.docstatus === 0" class="text-ink-gray-5">The order is sent to the store when it is submitted.</p>
+                <div v-if="d.docstatus === 1 && d.sync_status === 'Failed'" class="flex gap-2 rounded-4 bg-surface-red-2 px-3 py-2.5 text-ink-red-6">
+                  <span class="lucide-circle-alert mt-px size-4 shrink-0" />
+                  <div class="min-w-0 break-words">
+                    <div class="font-semibold">Sync failed</div>
+                    <div v-if="d.sync_error">{{ d.sync_error }}</div>
+                  </div>
+                </div>
+                <Button
+                  v-if="d.docstatus === 1 && d.sync_status === 'Failed'"
+                  class="w-full"
+                  variant="solid"
+                  label="Retry Sync"
+                  icon-left="lucide-refresh-cw"
+                  :loading="retrying"
+                  @click="retrySync"
+                />
+                <Button
+                  v-if="session.isManager && d.docstatus !== 0"
+                  class="w-full"
+                  label="View Sync Log"
+                  :route="{ name: 'SyncLogs', query: { reference: name } }"
+                />
+              </div>
             </div>
-          </dl>
-          <div v-if="canMarkPaid" class="p-4 pt-2">
-            <Button class="w-full" label="Mark as Paid" icon-left="lucide-check-circle" @click="openManualPayment" />
-          </div>
-          <div v-if="pay.razorpay_enabled && (pay.razorpay_payment_link_url || linkAction)" class="space-y-2 p-4 pt-1">
-            <div v-if="pay.razorpay_payment_link_url" class="flex gap-2">
-              <Button class="flex-1" label="Copy" icon-left="lucide-copy" @click="copyPaymentLink" />
-              <Button v-if="linkActive" class="flex-1" label="WhatsApp" icon-left="lucide-message-circle" @click="shareOnWhatsApp" />
+        </template>
+        <template #payment>
+            <!-- Payment status, manual collection and payment links -->
+            <div class="fs-card max-w-xl">
+              <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
+                <span class="lucide-credit-card size-4 text-ink-gray-7" />
+                <h2 class="flex-1 text-base font-semibold text-ink-gray-9">Payment</h2>
+                <StatusPill :status="pay.payment_status || 'Unpaid'" />
+              </div>
+              <dl class="divide-y divide-outline-gray-1 px-4">
+                <div v-for="item in paymentRows" :key="item.label" class="flex items-center justify-between gap-3 py-2.5">
+                  <dt class="shrink-0 text-ink-gray-6">{{ item.label }}</dt>
+                  <dd class="min-w-0 truncate text-right" :class="item.muted ? 'text-ink-gray-5' : 'text-ink-gray-8'">
+                    <a v-if="item.href" :href="item.href" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-ink-blue-6 hover:underline">
+                      {{ item.value }}<span class="lucide-external-link size-3.5" />
+                    </a>
+                    <template v-else>{{ item.value }}</template>
+                  </dd>
+                </div>
+              </dl>
+              <div v-if="canMarkPaid" class="p-4 pt-2">
+                <Button class="w-full" label="Mark as Paid" icon-left="lucide-check-circle" @click="openManualPayment" />
+              </div>
+              <div v-if="pay.razorpay_enabled && (pay.razorpay_payment_link_url || linkAction)" class="space-y-2 p-4 pt-1">
+                <div v-if="pay.razorpay_payment_link_url" class="flex gap-2">
+                  <Button class="flex-1" label="Copy" icon-left="lucide-copy" @click="copyPaymentLink" />
+                  <Button v-if="linkActive" class="flex-1" label="WhatsApp" icon-left="lucide-message-circle" @click="shareOnWhatsApp" />
+                </div>
+                <div class="flex gap-2">
+                  <Button
+                    v-if="linkAction"
+                    class="flex-1"
+                    :variant="linkActive ? 'subtle' : 'solid'"
+                    :label="linkAction"
+                    icon-left="lucide-link"
+                    :loading="creatingLink"
+                    @click="onLinkAction"
+                  />
+                  <Button
+                    v-if="pay.razorpay_payment_link_id"
+                    class="flex-1"
+                    label="Refresh"
+                    icon-left="lucide-refresh-cw"
+                    :loading="refreshingPayment"
+                    @click="refreshPayment"
+                  />
+                </div>
+              </div>
+              <div v-if="storeCheckout && !pay.razorpay_payment_link_url" class="space-y-2 p-4 pt-1">
+                <Button
+                  class="flex-1"
+                  variant="solid"
+                  label="Pay in Store Checkout"
+                  icon-left="lucide-external-link"
+                  @click="openStoreCheckout"
+                />
+                <div class="flex gap-2">
+                  <Button class="flex-1" label="Copy Link" icon-left="lucide-copy" @click="copyStoreCheckout" />
+                  <Button class="flex-1" label="WhatsApp" icon-left="lucide-message-circle" @click="shareStoreCheckout" />
+                </div>
+              </div>
             </div>
-            <div class="flex gap-2">
-              <Button
-                v-if="linkAction"
-                class="flex-1"
-                :variant="linkActive ? 'subtle' : 'solid'"
-                :label="linkAction"
-                icon-left="lucide-link"
-                :loading="creatingLink"
-                @click="onLinkAction"
-              />
-              <Button
-                v-if="pay.razorpay_payment_link_id"
-                class="flex-1"
-                label="Refresh"
-                icon-left="lucide-refresh-cw"
-                :loading="refreshingPayment"
-                @click="refreshPayment"
-              />
+        </template>
+        <template #invoice>
+            <!-- Invoice and confirmation email -->
+            <div class="fs-card max-w-xl">
+              <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
+                <span class="lucide-file-text size-4 text-ink-gray-7" />
+                <h2 class="flex-1 text-base font-semibold text-ink-gray-9">Invoice</h2>
+              </div>
+              <dl class="divide-y divide-outline-gray-1 px-4">
+                <div v-for="item in invoiceRows" :key="item.label" class="flex items-center justify-between gap-3 py-2.5">
+                  <dt class="shrink-0 text-ink-gray-6">{{ item.label }}</dt>
+                  <dd class="min-w-0 break-words text-right" :class="item.muted ? 'text-ink-gray-5' : 'text-ink-gray-8'">{{ item.value }}</dd>
+                </div>
+              </dl>
+              <div class="space-y-2 p-4 pt-1">
+                <div v-if="confirmationError" class="flex gap-2 rounded-4 bg-surface-red-2 px-3 py-2.5 text-ink-red-6">
+                  <span class="lucide-circle-alert mt-px size-4 shrink-0" />
+                  <div class="min-w-0 break-words">{{ d.confirmation_status }}</div>
+                </div>
+                <Button
+                  class="w-full"
+                  label="Download Invoice"
+                  icon-left="lucide-download"
+                  :href="invoiceUrl"
+                  target="_blank"
+                />
+                <Button
+                  v-if="d.external_order_id"
+                  class="w-full"
+                  label="Resend Email"
+                  icon-left="lucide-mail"
+                  :loading="sending"
+                  @click="resendConfirmation"
+                />
+              </div>
             </div>
-          </div>
-          <div v-if="storeCheckout && !pay.razorpay_payment_link_url" class="space-y-2 p-4 pt-1">
-            <Button
-              class="flex-1"
-              variant="solid"
-              label="Pay in Store Checkout"
-              icon-left="lucide-external-link"
-              @click="openStoreCheckout"
-            />
-            <div class="flex gap-2">
-              <Button class="flex-1" label="Copy Link" icon-left="lucide-copy" @click="copyStoreCheckout" />
-              <Button class="flex-1" label="WhatsApp" icon-left="lucide-message-circle" @click="shareStoreCheckout" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Invoice and confirmation email -->
-        <div v-if="d.docstatus === 1" class="fs-card">
-          <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
-            <span class="lucide-file-text size-4 text-ink-gray-7" />
-            <h2 class="flex-1 text-base font-semibold text-ink-gray-9">Invoice</h2>
-          </div>
-          <dl class="divide-y divide-outline-gray-1 px-4">
-            <div v-for="item in invoiceRows" :key="item.label" class="flex items-center justify-between gap-3 py-2.5">
-              <dt class="shrink-0 text-ink-gray-6">{{ item.label }}</dt>
-              <dd class="min-w-0 break-words text-right" :class="item.muted ? 'text-ink-gray-5' : 'text-ink-gray-8'">{{ item.value }}</dd>
-            </div>
-          </dl>
-          <div class="space-y-2 p-4 pt-1">
-            <div v-if="confirmationError" class="flex gap-2 rounded-4 bg-surface-red-2 px-3 py-2.5 text-ink-red-6">
-              <span class="lucide-circle-alert mt-px size-4 shrink-0" />
-              <div class="min-w-0 break-words">{{ d.confirmation_status }}</div>
-            </div>
-            <Button
-              class="w-full"
-              label="Download Invoice"
-              icon-left="lucide-download"
-              :href="invoiceUrl"
-              target="_blank"
-            />
-            <Button
-              v-if="d.external_order_id"
-              class="w-full"
-              label="Resend Email"
-              icon-left="lucide-mail"
-              :loading="sending"
-              @click="resendConfirmation"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+        </template>
+      </Notebook>
+      <template #chatter>
+        <Chatter doctype="Field Order" :name="name" :version="d.modified || null" />
+      </template>
+    </FormView>
 
     <!-- Add Multiple -->
     <Dialog v-model="pickerOpen" title="Add products" size="xl" @after-leave="resetPicker">
@@ -541,6 +578,10 @@ import {
   toast,
 } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
+import FormView from '@/components/odoo/FormView.vue'
+import Notebook from '@/components/odoo/Notebook.vue'
+import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusPill from '@/components/StatusPill.vue'
 import LinkField from '@/components/LinkField.vue'
@@ -564,20 +605,21 @@ const { options: locationOptions, multiple: multipleLocations, defaultLocation, 
 const Field = defineComponent({
   props: { label: String, required: Boolean },
   setup: (p, { slots }) => () =>
-    h('div', { class: 'space-y-1.5' }, [
-      h('div', { class: 'text-sm text-ink-gray-6' }, [p.label, p.required ? h('span', { class: 'text-ink-red-5' }, ' *') : null]),
-      slots.default?.(),
+    // Odoo's field row: the label on the left, the field on the right.
+    h('div', { class: 'grid min-w-0 grid-cols-[minmax(6rem,35%)_minmax(0,1fr)] items-center gap-2 py-0.5' }, [
+      h('div', { class: 'text-[14px] font-medium text-odoo-strong' }, [p.label, p.required ? h('span', { class: 'text-ink-red-5' }, ' *') : null]),
+      h('div', { class: 'min-w-0' }, slots.default?.()),
     ]),
 })
 
-/** A saved value in the same grey box as an input, optionally linking to its page. */
+/** A saved value as Odoo shows a read-only field (plain text), optionally linking to its page. */
 const ReadOnly = defineComponent({
   props: { value: String, aside: String, route: Object },
   setup: (p) => () =>
-    h('div', { class: 'flex h-7 items-center gap-2 rounded-4 bg-surface-gray-2 px-2' }, [
+    h('div', { class: 'flex min-h-7 items-center gap-2' }, [
       p.value && p.route
-        ? h(RouterLink, { to: p.route, class: 'flex-1 truncate text-ink-gray-8 hover:underline' }, () => p.value)
-        : h('span', { class: ['flex-1 truncate', p.value ? 'text-ink-gray-8' : 'text-ink-gray-4'] }, p.value || '—'),
+        ? h(RouterLink, { to: p.route, class: 'o-link flex-1 truncate' }, () => p.value)
+        : h('span', { class: ['flex-1 truncate', p.value ? 'text-odoo-text' : 'text-odoo-muted'] }, p.value || ''),
       p.aside ? h('span', { class: 'shrink-0 text-ink-gray-5' }, p.aside) : null,
     ]),
 })
@@ -1202,6 +1244,31 @@ watch(
   { immediate: true },
 )
 const pay = computed(() => paymentInfo.data || {})
+
+// Odoo form: the status bar's stages, the corner ribbon and the notebook's pages.
+const stage = computed(() => {
+  if (d.value.docstatus === 2) return 'cancelled'
+  if (d.value.docstatus === 0) return 'draft'
+  return d.value.sync_status === 'Synced' ? 'synced' : 'submitted'
+})
+const stages = computed(() =>
+  d.value.docstatus === 2
+    ? [{ value: 'draft', label: 'Draft' }, { value: 'cancelled', label: 'Cancelled' }]
+    : [{ value: 'draft', label: 'Draft' }, { value: 'submitted', label: 'Submitted' }, { value: 'synced', label: 'In Store' }],
+)
+const ribbon = computed(() => {
+  if (d.value.docstatus === 2) return { label: 'Cancelled', tone: 'danger' }
+  if (pay.value.payment_status === 'Paid') return { label: 'Paid', tone: 'success' }
+  if (pay.value.payment_status === 'Partially Paid') return { label: 'Partly Paid', tone: 'warning' }
+  return null
+})
+const tab = ref('lines')
+const tabs = computed(() => [
+  { value: 'lines', label: 'Order Lines' },
+  { value: 'sync', label: 'Store Sync' },
+  { value: 'payment', label: 'Payment', hide: d.value.docstatus !== 1 },
+  { value: 'invoice', label: 'Invoice', hide: d.value.docstatus !== 1 },
+])
 const creatingLink = ref(false)
 const refreshingPayment = ref(false)
 

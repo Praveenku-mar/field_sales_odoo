@@ -1,48 +1,60 @@
 <template>
   <div>
-    <PageHeader :title="d.full_name || d.sales_rep || name" :status="d.name ? d.status : null">
-      <template #meta>
-        <span class="text-ink-gray-5">{{ periodLabel }}</span>
-      </template>
-      <template #actions>
-        <template v-if="d.can_manage && d.docstatus === 0">
-          <Button label="Regenerate" icon-left="lucide-refresh-cw" @click="askRegenerate" />
-          <Button label="Approve" icon-left="lucide-check" variant="solid" @click="askApprove" />
-        </template>
-        <Button v-if="d.can_manage && d.status === 'Approved'" label="Mark Paid" icon-left="lucide-banknote" variant="solid" @click="openPay" />
-      </template>
-    </PageHeader>
+    <PageHeader :title="d.full_name || d.sales_rep || name" :breadcrumbs="[{ label: 'Commission', to: { name: 'Commission' } }]" />
 
     <div v-if="statement.error" class="px-5">
       <div class="fs-card"><EmptyState icon="lucide-circle-alert" title="Statement not found" :description="errorText" /></div>
     </div>
 
-    <div v-else class="space-y-4 px-5 pb-6">
-      <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <NumberCard label="Total Sales" :value="money(d.total_sales)" :loading="!d.name" />
-        <NumberCard label="Slab Rate" :value="d.name ? `${formatNumber(d.slab_rate_applied, 2)}%` : null" :loading="!d.name" />
-        <NumberCard label="Gross Commission" :value="money(d.gross_commission)" :loading="!d.name" />
-        <NumberCard label="Reversals" :value="money(d.reversals)" :loading="!d.name" theme="red" />
-        <NumberCard label="Override" :value="money(d.override_commission)" :loading="!d.name" />
-        <NumberCard label="Net Payable" :value="money(d.net_payable)" :loading="!d.name" theme="green" />
+    <FormView
+      v-else
+      :stages="d.status === 'Cancelled' ? CANCELLED_STAGES : STAGES"
+      :current="d.status"
+      :ribbon="d.status === 'Paid' ? { label: 'Paid', tone: 'success' } : d.status === 'Cancelled' ? { label: 'Cancelled', tone: 'danger' } : null"
+    >
+      <template #statusbar>
+        <template v-if="d.can_manage && d.docstatus === 0">
+          <Button label="Approve" icon-left="lucide-check" variant="solid" @click="askApprove" />
+          <Button label="Regenerate" icon-left="lucide-refresh-cw" @click="askRegenerate" />
+        </template>
+        <Button v-if="d.can_manage && d.status === 'Approved'" label="Mark Paid" icon-left="lucide-banknote" variant="solid" @click="openPay" />
+      </template>
+      <template #smart>
+        <SmartButton icon="lucide-indian-rupee" :value="money(d.total_sales)" label="Total sales" />
+        <SmartButton icon="lucide-percent" :value="d.name ? `${formatNumber(d.slab_rate_applied, 2)}%` : '—'" label="Slab rate" />
+        <SmartButton icon="lucide-wallet" :value="money(d.gross_commission)" label="Gross commission" />
+        <SmartButton icon="lucide-undo-2" :value="money(d.reversals)" label="Reversals" />
+        <SmartButton icon="lucide-users" :value="money(d.override_commission)" label="Override" />
+        <SmartButton icon="lucide-banknote" :value="money(d.net_payable)" label="Net payable" />
+      </template>
+
+      <div class="mb-4">
+        <div class="text-[13px] text-odoo-muted">Commission statement · {{ periodLabel }}</div>
+        <div class="text-[28px] font-semibold leading-tight text-odoo-strong">{{ d.full_name || d.sales_rep || name }}</div>
       </div>
 
       <SectionCard title="Details">
-        <InfoGrid :items="details" :columns="3" />
+        <InfoGrid :items="details" :columns="2" />
       </SectionCard>
 
-      <SectionCard :title="`Entries (${rows.length})`" flush>
-        <DataTable
-          :columns="columns"
-          :rows="rows"
-          :loading="statement.loading && !d.name"
-          empty-icon="lucide-wallet"
-          empty-title="No entries"
-          empty-description="This statement has no commission entries."
-        >
-        </DataTable>
-      </SectionCard>
-    </div>
+      <Notebook v-model="tab" :tabs="[{ value: 'entries', label: `Entries (${rows.length})` }]">
+        <template #entries>
+          <DataTable
+            boxed
+            :columns="columns"
+            :rows="rows"
+            :loading="statement.loading && !d.name"
+            empty-icon="lucide-wallet"
+            empty-title="No entries"
+            empty-description="This statement has no commission entries."
+          >
+          </DataTable>
+        </template>
+      </Notebook>
+      <template #chatter>
+        <Chatter doctype="Commission Statement" :name="name" :version="d.status || null" />
+      </template>
+    </FormView>
 
     <Dialog v-model="confirm.open" :title="confirm.title" :message="confirm.message" :icon="confirm.icon" :theme="confirm.theme">
       <template #actions>
@@ -72,7 +84,10 @@
 import { computed, reactive, ref } from 'vue'
 import { Button, Dialog, FormControl, createResource, toast } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
-import NumberCard from '@/components/NumberCard.vue'
+import FormView from '@/components/odoo/FormView.vue'
+import Notebook from '@/components/odoo/Notebook.vue'
+import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -184,4 +199,16 @@ async function submitPay() {
     paying.value = false
   }
 }
+
+// Odoo form: the status bar's stages and the notebook.
+const STAGES = [
+  { value: 'Draft', label: 'Draft' },
+  { value: 'Approved', label: 'Approved' },
+  { value: 'Paid', label: 'Paid' },
+]
+const CANCELLED_STAGES = [
+  { value: 'Draft', label: 'Draft' },
+  { value: 'Cancelled', label: 'Cancelled' },
+]
+const tab = ref('entries')
 </script>

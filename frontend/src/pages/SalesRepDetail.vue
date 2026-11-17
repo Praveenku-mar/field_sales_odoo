@@ -1,11 +1,18 @@
 <template>
   <div>
-    <PageHeader :title="d.full_name || name" :status="d.name ? (d.active ? 'Active' : 'Inactive') : null">
-      <template #meta><span class="text-ink-gray-5">{{ name }}</span></template>
+    <PageHeader :title="d.full_name || name" :breadcrumbs="[{ label: 'Sales Reps', to: { name: 'SalesReps' } }]">
       <template #actions>
-        <Dropdown v-if="d.name && moreActions.length" :options="moreActions" align="end">
-          <Button variant="ghost" icon="lucide-ellipsis" aria-label="More actions" />
+        <Button v-if="canEdit" label="Edit" icon-left="lucide-pencil" @click="openEdit" />
+        <Dropdown v-if="d.name && moreActions.length" :options="moreActions" align="start">
+          <Button variant="ghost" icon="lucide-settings" aria-label="Actions" title="Actions" />
         </Dropdown>
+      </template>
+    </PageHeader>
+
+    <div v-if="doc.get.error" class="px-5"><div class="fs-card"><EmptyState icon="lucide-circle-alert" title="Sales rep not found" :description="errorText" /></div></div>
+
+    <FormView v-else :ribbon="d.name && !d.active ? { label: 'Inactive', tone: 'danger' } : null">
+      <template #statusbar>
         <Button v-if="canSendReset" label="Send Reset Link" icon-left="lucide-mail" @click="openReset" />
         <Button
           v-if="canChangePassword"
@@ -13,81 +20,85 @@
           icon-left="lucide-key-round"
           @click="openPassword"
         />
-        <Button v-if="canEdit" label="Edit" icon-left="lucide-pencil" variant="solid" @click="openEdit" />
       </template>
-    </PageHeader>
+      <template #smart>
+        <SmartButton icon="lucide-store" :value="retailerCount.data ?? '—'" label="Active shops" />
+        <SmartButton icon="lucide-indian-rupee" :value="m ? formatCurrency(m.order_value, undefined, 0) : '—'" :label="`Sales · ${monthLabel}`" />
+        <SmartButton icon="lucide-map-pin-check" :value="(visits.data || []).length" label="Recent visits" @click="tab = 'visits'" />
+        <SmartButton icon="lucide-shopping-cart" :value="(orders.data || []).length" label="Recent orders" @click="tab = 'orders'" />
+        <SmartButton v-if="team.data?.length" icon="lucide-users" :value="team.data.length" label="Team" @click="tab = 'team'" />
+      </template>
 
-    <div v-if="doc.get.error" class="px-5"><div class="fs-card"><EmptyState icon="lucide-circle-alert" title="Sales rep not found" :description="errorText" /></div></div>
+      <div class="mb-4">
+        <div class="text-[13px] text-odoo-muted">{{ name }}</div>
+        <div class="text-[28px] font-semibold leading-tight text-odoo-strong">{{ d.full_name || name }}</div>
+      </div>
 
-    <div v-else class="grid grid-cols-1 items-start gap-4 px-5 pb-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div class="space-y-4">
-        <SectionCard title="Details">
-          <InfoGrid :items="details" :columns="3" />
-        </SectionCard>
+      <div class="grid grid-cols-1 gap-x-10 gap-y-2 lg:grid-cols-3">
+        <div class="lg:col-span-2">
+          <SectionCard title="Details">
+            <InfoGrid :items="details" :columns="2" />
+          </SectionCard>
+        </div>
+        <div>
+          <div class="fs-card">
+            <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
+              <span class="lucide-chart-column size-4 text-ink-gray-7" />
+              <h2 class="flex-1 text-base font-semibold text-ink-gray-9">This Month</h2>
+              <span class="text-ink-gray-5">{{ monthLabel }}</span>
+            </div>
+            <div v-if="month.loading && !month.data" class="flex justify-center py-8"><LoadingIndicator class="size-4" /></div>
+            <div v-else-if="!m" class="px-4 py-6 text-center text-ink-gray-5">No activity this month</div>
+            <template v-else>
+              <div class="space-y-2 px-4 py-3">
+                <div class="flex items-baseline justify-between">
+                  <span class="text-2xl font-semibold tabular-nums text-ink-gray-9">{{ formatCurrency(m.order_value, undefined, 0) }}</span>
+                  <span v-if="m.period_target" class="text-ink-gray-5">of {{ formatCurrency(m.period_target, undefined, 0) }}</span>
+                </div>
+                <Achievement :pct="m.achievement_pct" />
+                <p v-if="m.period_target" class="text-xs text-ink-gray-5">
+                  Target to date, pro-rated from {{ formatCurrency(m.monthly_target, undefined, 0) }} a month
+                </p>
+              </div>
+              <dl class="divide-y divide-outline-gray-1 border-t border-desk-border px-4">
+                <div v-for="item in monthRows" :key="item.label" class="flex items-center justify-between py-2.5">
+                  <dt class="text-ink-gray-6">{{ item.label }}</dt>
+                  <dd class="tabular-nums" :class="item.alert ? 'font-medium text-ink-red-6' : 'text-ink-gray-8'">{{ item.value }}</dd>
+                </div>
+              </dl>
+            </template>
+            <div class="p-4 pt-1">
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <SectionCard v-if="team.data?.length" :title="`Team (${team.data.length})`" flush>
-          <DataTable :columns="teamColumns" :rows="team.data" :row-route="(r) => ({ name: 'SalesRep', params: { name: r.name } })">
+      <Notebook v-model="tab" :tabs="tabs">
+        <template #visits>
+          <DataTable boxed :columns="visitColumns" :rows="visits.data || []" :loading="visits.list.loading" :row-route="(r) => ({ name: 'Visit', params: { name: r.name } })" empty-icon="lucide-map-pin" empty-title="No visits yet">
+            <template #cell-status="{ value }"><StatusPill :status="value" /></template>
+          </DataTable>
+        </template>
+        <template #orders>
+          <DataTable boxed :columns="orderColumns" :rows="orders.data || []" :loading="orders.list.loading" :row-route="(r) => ({ name: 'Order', params: { name: r.name } })" empty-icon="lucide-shopping-cart" empty-title="No orders yet">
+            <template #cell-sync_status="{ row }"><StatusPill :status="orderStatus(row)" /></template>
+          </DataTable>
+        </template>
+        <template #team>
+          <DataTable boxed :columns="teamColumns" :rows="team.data || []" :row-route="(r) => ({ name: 'SalesRep', params: { name: r.name } })">
             <template #cell-full_name="{ row }">
-              <div class="font-medium text-ink-gray-9">{{ row.full_name }}</div>
-              <div class="text-xs text-ink-gray-5">{{ row.name }}</div>
+              <div class="font-medium text-odoo-strong">{{ row.full_name }}</div>
+              <div class="text-xs text-odoo-muted">{{ row.name }}</div>
             </template>
             <template #cell-achievement="{ row }"><Achievement :pct="teamStats.data?.[row.name]?.achievement_pct ?? null" /></template>
             <template #cell-active="{ row }"><StatusPill :status="row.active ? 'Active' : 'Inactive'" /></template>
           </DataTable>
-        </SectionCard>
-
-        <SectionCard title="Recent Visits" flush>
-          <DataTable :columns="visitColumns" :rows="visits.data || []" :loading="visits.list.loading" :row-route="(r) => ({ name: 'Visit', params: { name: r.name } })" empty-icon="lucide-map-pin" empty-title="No visits yet">
-            <template #cell-status="{ value }"><StatusPill :status="value" /></template>
-          </DataTable>
-        </SectionCard>
-
-        <SectionCard title="Recent Orders" flush>
-          <DataTable :columns="orderColumns" :rows="orders.data || []" :loading="orders.list.loading" :row-route="(r) => ({ name: 'Order', params: { name: r.name } })" empty-icon="lucide-shopping-cart" empty-title="No orders yet">
-            <template #cell-sync_status="{ row }"><StatusPill :status="orderStatus(row)" /></template>
-          </DataTable>
-        </SectionCard>
-      </div>
-
-      <div class="space-y-4">
-        <div class="fs-card">
-          <div class="flex items-center gap-2 border-b border-desk-border px-4 py-3">
-            <span class="lucide-chart-column size-4 text-ink-gray-7" />
-            <h2 class="flex-1 text-base font-semibold text-ink-gray-9">This Month</h2>
-            <span class="text-ink-gray-5">{{ monthLabel }}</span>
-          </div>
-          <div v-if="month.loading && !month.data" class="flex justify-center py-8"><LoadingIndicator class="size-4" /></div>
-          <div v-else-if="!m" class="px-4 py-6 text-center text-ink-gray-5">No activity this month</div>
-          <template v-else>
-            <div class="space-y-2 px-4 py-3">
-              <div class="flex items-baseline justify-between">
-                <span class="text-2xl font-semibold tabular-nums text-ink-gray-9">{{ formatCurrency(m.order_value, undefined, 0) }}</span>
-                <span v-if="m.period_target" class="text-ink-gray-5">of {{ formatCurrency(m.period_target, undefined, 0) }}</span>
-              </div>
-              <Achievement :pct="m.achievement_pct" />
-              <p v-if="m.period_target" class="text-xs text-ink-gray-5">
-                Target to date, pro-rated from {{ formatCurrency(m.monthly_target, undefined, 0) }} a month
-              </p>
-            </div>
-            <dl class="divide-y divide-outline-gray-1 border-t border-desk-border px-4">
-              <div v-for="item in monthRows" :key="item.label" class="flex items-center justify-between py-2.5">
-                <dt class="text-ink-gray-6">{{ item.label }}</dt>
-                <dd class="tabular-nums" :class="item.alert ? 'font-medium text-ink-red-6' : 'text-ink-gray-8'">{{ item.value }}</dd>
-              </div>
-            </dl>
-          </template>
-          <div class="p-4 pt-1">
-          </div>
-        </div>
-
-        <SectionCard title="Shops">
-          <div class="flex items-baseline justify-between">
-            <span class="text-2xl font-semibold tabular-nums text-ink-gray-9">{{ retailerCount.data ?? '—' }}</span>
-            <span class="text-ink-gray-5">active shops assigned</span>
-          </div>
-        </SectionCard>
-      </div>
-    </div>
+        </template>
+      </Notebook>
+      <template #chatter>
+        <Chatter doctype="Sales Rep" :name="name" :version="d.modified || null" />
+      </template>
+    </FormView>
 
     <Dialog v-model="editOpen" title="Edit sales rep" size="lg">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -241,6 +252,10 @@ import {
   toast,
 } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
+import FormView from '@/components/odoo/FormView.vue'
+import Notebook from '@/components/odoo/Notebook.vue'
+import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -512,4 +527,12 @@ async function sendReset() {
     reset.sending = false
   }
 }
+
+// Odoo form: the notebook's pages (Team only for someone with reports).
+const tab = ref('visits')
+const tabs = computed(() => [
+  { value: 'visits', label: 'Recent Visits' },
+  { value: 'orders', label: 'Recent Orders' },
+  { value: 'team', label: `Team (${team.data?.length || 0})`, hide: !team.data?.length },
+])
 </script>

@@ -1,26 +1,27 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Field Orders">
+    <PageHeader title="Field Orders" :pager="kanbanGroupBy ? null : pager" flush>
       <template #actions>
         <Button label="New Order" icon-left="lucide-plus" variant="solid" @click="newOrderOpen = true" />
       </template>
+      <template #search>
+        <ListFilters v-model="model" v-model:group-by="groupBy" :groups="view === 'kanban' ? GROUPS : []" search-placeholder="Search order or retailer" :tabs="tabs" :fields="filterFields">
+          <PresetChip :label="presetLabel" />
+        </ListFilters>
+      </template>
+      <template #views><ViewSwitcher v-model="view" /></template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search order or retailer" :tabs="tabs" :fields="filterFields">
-        <PresetChip :label="presetLabel" />
-      </ListFilters>
       <DataTable
+        v-if="view === 'list'"
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'Order', params: { name: row.name } })"
         empty-icon="lucide-shopping-cart"
         empty-title="No orders found"
-        @load-more="list.next()"
       >
         <template #cell-name="{ row }">
           <div class="font-medium text-ink-gray-9">{{ row.retailer_name }}</div>
@@ -36,14 +37,39 @@
           <span v-else class="text-ink-gray-4">—</span>
         </template>
       </DataTable>
-    </div>
+      <KanbanView
+        v-else
+        :rows="list.data || []"
+        :loading="list.list.loading"
+        :columns="kanban.columns.value"
+        :row-route="(row) => ({ name: 'Order', params: { name: row.name } })"
+        empty-icon="lucide-shopping-cart"
+        empty-title="No orders found"
+        @load-more="kanban.loadMore"
+      >
+        <template #card="{ row }">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="truncate text-[14px] font-semibold text-odoo-strong">{{ row.retailer_name }}</div>
+              <div class="truncate text-odoo-muted">{{ row.name }} · {{ formatDate(row.order_date) }}</div>
+            </div>
+            <span class="shrink-0 font-semibold tabular-nums text-odoo-strong">{{ formatCurrency(row.grand_total) }}</span>
+          </div>
+          <div class="mt-2 flex flex-wrap items-center gap-1.5">
+            <StatusPill :status="orderStatus(row)" />
+            <StatusPill v-if="row.docstatus === 1 && row.payment_status" :status="row.payment_status" />
+            <span class="flex-1" />
+            <Avatar v-if="row.sales_rep_name" :label="row.sales_rep_name" size="sm" :title="row.sales_rep_name" />
+          </div>
+        </template>
+      </KanbanView>
     <NewOrderDialog v-model="newOrderOpen" />
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Button, Tooltip } from 'frappe-ui'
+import { Avatar, Button, Tooltip } from 'frappe-ui'
 import NewOrderDialog from '@/components/NewOrderDialog.vue'
 
 const newOrderOpen = ref(false)
@@ -54,6 +80,10 @@ import PresetChip from '@/components/PresetChip.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusPill from '@/components/StatusPill.vue'
 import { useDocList } from '@/composables/useDocList'
+import ViewSwitcher from '@/components/odoo/ViewSwitcher.vue'
+import KanbanView from '@/components/odoo/KanbanView.vue'
+import { useViewMode } from '@/composables/useViewMode'
+import { useKanbanGroups } from '@/composables/useKanbanGroups'
 import { useSellLocations } from '@/composables/useSellLocations'
 import { formatCurrency, formatDate, formatNumber, orderStatus } from '@/utils/format'
 
@@ -65,14 +95,14 @@ const tabs = [
   { label: 'Failed', value: 'failed' },
 ]
 const columns = [
-  { key: 'name', label: 'Order' },
+  { key: 'name', label: 'Order', sortField: 'name' },
   { key: 'sales_rep_name', label: 'Sales Rep' },
-  { key: 'location_name', label: 'Location' },
-  { key: 'order_date', label: 'Date', format: formatDate },
-  { key: 'total_qty', label: 'Units', align: 'right', format: (v) => formatNumber(v) },
-  { key: 'grand_total', label: 'Total', align: 'right', format: (v) => formatCurrency(v) },
-  { key: 'sync_status', label: 'Status' },
-  { key: 'payment_status', label: 'Payment' },
+  { key: 'location_name', label: 'Location', sortField: 'location_name' },
+  { key: 'order_date', label: 'Date', sortField: 'order_date', format: formatDate },
+  { key: 'total_qty', label: 'Units', sortField: 'total_qty', sum: true, align: 'right', format: (v) => formatNumber(v) },
+  { key: 'grand_total', label: 'Total', sortField: 'grand_total', sum: true, align: 'right', format: (v) => formatCurrency(v) },
+  { key: 'sync_status', label: 'Status', sortField: 'sync_status' },
+  { key: 'payment_status', label: 'Payment', sortField: 'payment_status' },
 ]
 
 function buildFilters(m) {
@@ -107,7 +137,7 @@ const filterFields = computed(() => [
 ])
 
 const route = useRoute()
-const { model, list, count, presetLabel, pageSize } = useDocList({
+const docList = useDocList({
   doctype: 'Field Order',
   fields: ['name', 'retailer_name', 'sales_rep', 'sales_rep.full_name as sales_rep_name', 'order_date', 'location_id', 'location_name', 'total_qty', 'grand_total', 'docstatus', 'sync_status', 'sync_error', 'payment_status'],
   orderBy: 'order_date desc, creation desc',
@@ -118,4 +148,19 @@ const { model, list, count, presetLabel, pageSize } = useDocList({
   initial: { tab: route.query.preset ? 'all' : route.query.tab || 'all' },
   preset: route.query.preset || null,
 })
+const { model, list, count, presetLabel, pageSize, pager, sort } = docList
+
+// List or kanban (remembered; phones start in kanban), and the kanban's Group By columns.
+const view = useViewMode('orders')
+const groupBy = ref(null)
+const GROUPS = [
+  { field: 'sync_status', label: 'Status' },
+  { field: 'payment_status', label: 'Payment' },
+]
+const GROUP_COLUMNS = {
+  sync_status: [{ value: 'Draft', label: 'Draft' }, { value: 'Pending', label: 'Pending' }, { value: 'Synced', label: 'Synced' }, { value: 'Failed', label: 'Failed' }],
+  payment_status: [{ value: 'Unpaid', label: 'Unpaid' }, { value: 'Link Sent', label: 'Link Sent' }, { value: 'Partially Paid', label: 'Partially Paid' }, { value: 'Paid', label: 'Paid' }, { value: 'Link Expired', label: 'Link Expired' }, { value: 'Link Cancelled', label: 'Link Cancelled' }],
+}
+const kanbanGroupBy = computed(() => (view.value === 'kanban' ? groupBy.value : null))
+const kanban = useKanbanGroups(docList, kanbanGroupBy, GROUP_COLUMNS)
 </script>

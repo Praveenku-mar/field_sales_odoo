@@ -1,7 +1,6 @@
 <template>
   <div>
-    <PageHeader :title="d.retailer_name || name" :status="d.status">
-      <template #meta><span class="text-ink-gray-5">{{ name }}</span></template>
+    <PageHeader :title="d.retailer_name || name" :breadcrumbs="[{ label: 'Visits', to: { name: 'Visits' } }]">
       <template #actions>
         <Button
           v-if="session.isManager"
@@ -10,6 +9,18 @@
           :disabled="!d.name"
           @click="editOpen = true"
         />
+      </template>
+    </PageHeader>
+
+    <div v-if="doc.get.error" class="px-5"><div class="fs-card"><EmptyState icon="lucide-circle-alert" title="Visit not found" :description="errorText" /></div></div>
+
+    <FormView
+      v-else
+      :stages="d.status === 'Cancelled' ? CANCELLED_STAGES : STAGES"
+      :current="d.status"
+      :ribbon="d.status === 'Cancelled' ? { label: 'Cancelled', tone: 'danger' } : null"
+    >
+      <template #statusbar>
         <!-- Inside Shopify admin there is no location: check in / out happens in the standalone app -->
         <Button
           v-if="embedded && (d.status === 'In Progress' || (d.status === 'Planned' && isVisitDay))"
@@ -20,23 +31,56 @@
         />
         <Button v-if="!embedded && d.status === 'Planned' && isOwnVisit && isVisitDay" label="Check In" icon-left="lucide-log-in" variant="solid" :loading="busy" @click="checkInOut('check_in')" />
         <template v-if="d.status === 'In Progress'">
-          <Button label="New Order" icon-left="lucide-shopping-cart" @click="newOrderOpen = true" />
           <Button v-if="!embedded" label="Check Out" icon-left="lucide-log-out" variant="solid" :loading="busy" @click="startCheckOut" />
+          <Button label="New Order" icon-left="lucide-shopping-cart" @click="newOrderOpen = true" />
         </template>
       </template>
-    </PageHeader>
+      <template v-if="banner" #alerts>
+        <div class="rounded px-4 py-3" :class="banner.class">{{ banner.text }}</div>
+      </template>
+      <template #smart>
+        <SmartButton
+          icon="lucide-store"
+          :value="d.retailer_name || d.retailer || '—'"
+          label="Shop"
+          :to="d.retailer ? { name: 'Retailer', params: { name: d.retailer } } : null"
+        />
+        <SmartButton icon="lucide-shopping-cart" :value="(orders.data || []).length" label="Orders" @click="tab = 'orders'" />
+        <SmartButton icon="lucide-timer" :value="onSite" :label="d.check_in_time ? `In ${formatTime(d.check_in_time)}${d.check_out_time ? ` · out ${formatTime(d.check_out_time)}` : ''}` : 'Not checked in'" />
+      </template>
 
-    <div v-if="doc.get.error" class="px-5"><div class="fs-card"><EmptyState icon="lucide-circle-alert" title="Visit not found" :description="errorText" /></div></div>
+      <div class="mb-4">
+        <div class="text-[13px] text-odoo-muted">{{ name }}</div>
+        <div class="text-[28px] font-semibold leading-tight text-odoo-strong">{{ d.retailer_name || name }}</div>
+      </div>
 
-    <div v-else class="grid grid-cols-1 gap-5 px-5 pb-6 xl:grid-cols-3">
-      <div class="space-y-5 xl:col-span-2">
-        <div v-if="banner" class="rounded-4 px-4 py-3" :class="banner.class">{{ banner.text }}</div>
+      <div class="grid grid-cols-1 gap-x-10 gap-y-2 lg:grid-cols-3">
+        <div class="space-y-2 lg:col-span-2">
+          <SectionCard title="Visit">
+            <InfoGrid :items="details" :columns="2" />
+          </SectionCard>
+        </div>
+        <div class="space-y-2">
+          <SectionCard title="Notes & Outcome">
+            <InfoGrid :items="outcome" :columns="1" />
+            <p v-if="d.notes" class="mt-3 whitespace-pre-line text-odoo-text">{{ d.notes }}</p>
+          </SectionCard>
+        </div>
+      </div>
 
-        <SectionCard title="Visit">
-          <InfoGrid :items="details" :columns="3" />
-        </SectionCard>
-
-        <SectionCard title="Check-in Location">
+      <Notebook v-model="tab" :tabs="TABS">
+        <template #orders>
+          <div v-if="canOrder" class="mb-2 flex justify-end">
+            <Button label="New Order" icon-left="lucide-plus" size="sm" @click="newOrderOpen = true" />
+          </div>
+          <DataTable boxed :columns="orderColumns" :rows="orders.data || []" :loading="orders.loading" :row-route="(r) => ({ name: 'Order', params: { name: r.name } })" empty-icon="lucide-shopping-cart" empty-title="No orders from this visit">
+            <template #cell-status="{ row }">
+              <StatusPill :status="row.status" />
+              <div v-if="row.short_items" class="mt-1 text-xs text-ink-red-6">{{ plural(row.short_items, 'item') }} over stock</div>
+            </template>
+          </DataTable>
+        </template>
+        <template #location>
           <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <InfoGrid :items="geo" :columns="1" />
             <MapEmbed
@@ -46,35 +90,12 @@
               empty-description="Recorded when the rep checks in."
             />
           </div>
-        </SectionCard>
-
-        <SectionCard title="Orders from this Visit" flush>
-          <template v-if="canOrder" #actions>
-            <Button label="New Order" icon-left="lucide-plus" size="sm" @click="newOrderOpen = true" />
-          </template>
-          <DataTable :columns="orderColumns" :rows="orders.data || []" :loading="orders.loading" :row-route="(r) => ({ name: 'Order', params: { name: r.name } })" empty-icon="lucide-shopping-cart" empty-title="No orders from this visit">
-            <template #cell-status="{ row }">
-              <StatusPill :status="row.status" />
-              <div v-if="row.short_items" class="mt-1 text-xs text-ink-red-6">{{ plural(row.short_items, 'item') }} over stock</div>
-            </template>
-          </DataTable>
-        </SectionCard>
-      </div>
-
-      <div class="space-y-5">
-        <SectionCard title="Time on Site">
-          <div class="text-3xl font-semibold tabular-nums text-ink-gray-9">{{ onSite }}</div>
-          <div class="mt-1 text-xs text-ink-gray-5">
-            {{ d.check_in_time ? `In ${formatTime(d.check_in_time)}` : 'Not checked in' }}
-            <template v-if="d.check_out_time"> · Out {{ formatTime(d.check_out_time) }}</template>
-          </div>
-        </SectionCard>
-        <SectionCard title="Notes & Outcome">
-          <InfoGrid :items="outcome" :columns="1" />
-          <p v-if="d.notes" class="mt-3 whitespace-pre-line text-ink-gray-8">{{ d.notes }}</p>
-        </SectionCard>
-      </div>
-    </div>
+        </template>
+      </Notebook>
+      <template #chatter>
+        <Chatter doctype="Visit" :name="name" :version="d.modified || null" />
+      </template>
+    </FormView>
 
     <Dialog v-model="reasonOpen" title="No order taken" size="md">
       <div class="space-y-4">
@@ -105,6 +126,10 @@
 import { computed, ref } from 'vue'
 import { Button, Dialog, FormControl, createDocumentResource, createResource, toast } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
+import FormView from '@/components/odoo/FormView.vue'
+import Notebook from '@/components/odoo/Notebook.vue'
+import SmartButton from '@/components/odoo/SmartButton.vue'
+import Chatter from '@/components/odoo/Chatter.vue'
 import SectionCard from '@/components/SectionCard.vue'
 import InfoGrid from '@/components/InfoGrid.vue'
 import MapEmbed from '@/components/MapEmbed.vue'
@@ -240,4 +265,20 @@ async function checkInOut(action, extra = {}) {
     busy.value = false
   }
 }
+
+// Odoo form: the status bar's stages and the notebook's pages.
+const STAGES = [
+  { value: 'Planned', label: 'Planned' },
+  { value: 'In Progress', label: 'In Progress' },
+  { value: 'Completed', label: 'Completed' },
+]
+const CANCELLED_STAGES = [
+  { value: 'Planned', label: 'Planned' },
+  { value: 'Cancelled', label: 'Cancelled' },
+]
+const TABS = [
+  { value: 'orders', label: 'Orders' },
+  { value: 'location', label: 'Check-in Location' },
+]
+const tab = ref('orders')
 </script>

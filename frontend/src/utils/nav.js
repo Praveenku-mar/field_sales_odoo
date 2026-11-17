@@ -35,15 +35,6 @@ export const NAV_ITEMS = [
   { label: 'My Orders', route: 'MyOrders', icon: 'lucide-shopping-cart', retailerOnly: true },
 ]
 
-// The bottom tab bar on phones (< 768px), where the sidebar is hidden.
-export const TAB_ITEMS = [
-  { label: 'Dashboard', route: 'Dashboard', icon: 'lucide-layout-dashboard', roles: STAFF },
-  { label: 'Visits', route: 'Visits', icon: 'lucide-map-pin-check', roles: STAFF },
-  { label: 'Orders', route: 'Orders', icon: 'lucide-shopping-cart', roles: STAFF },
-  { label: 'Shops', route: 'Retailers', icon: 'lucide-store', roles: STAFF },
-  { label: 'My Orders', route: 'MyOrders', icon: 'lucide-shopping-cart', retailerOnly: true },
-]
-
 // Listed on the Reports page.
 export const REPORT_LINKS = [
   {
@@ -80,4 +71,31 @@ export function documentTarget(doctype, name) {
   const routeName = DOCTYPE_ROUTES[doctype]
   if (routeName) return { route: { name: routeName, params: { name } } }
   return { href: `/app/${doctype.toLowerCase().replace(/\s+/g, '-')}/${encodeURIComponent(name)}` }
+}
+
+// Odoo-style top menu: app sections, each a link (one page) or a dropdown (several).
+// Items are NAV_ITEMS routes or REPORT_LINKS route names; the same visibility rules apply
+// (session.canSee), and a section with nothing visible is hidden.
+export const MENU_SECTIONS = [
+  { label: 'Dashboard', items: ['Dashboard'] },
+  { label: 'Sales', items: ['Orders', 'Retailers', 'Visits'] },
+  { label: 'Products', items: ['Products'] },
+  { label: 'Team', items: ['SalesReps', 'Commission'] },
+  { label: 'Reporting', items: ['RepPerformance', 'RepCommission', '-', 'SyncLogs', 'SyncFailures'] },
+  { label: 'Configuration', items: ['Settings'] },
+  { label: 'My Orders', items: ['MyOrders'] },
+]
+
+/** MENU_SECTIONS resolved for this user: [{ label, items: [{ label, route, count?, ... } | '-'] }] */
+export function menuSections(canSee) {
+  const byRoute = Object.fromEntries([
+    ...NAV_ITEMS.map((item) => [item.route, item]),
+    ...REPORT_LINKS.map((link) => [link.route.name, { ...link, route: link.route.name }]),
+  ])
+  return MENU_SECTIONS.map((section) => {
+    const items = section.items.map((key) => (key === '-' ? '-' : byRoute[key])).filter((item) => item === '-' || (item && canSee(item)))
+    // No separator at either end or twice in a row.
+    const tidy = items.filter((item, i) => item !== '-' || (i > 0 && i < items.length - 1 && items[i - 1] !== '-'))
+    return { ...section, items: tidy }
+  }).filter((section) => section.items.some((item) => item !== '-'))
 }

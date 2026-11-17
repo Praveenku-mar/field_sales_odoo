@@ -1,24 +1,25 @@
 <template>
   <!-- Full height: the table fills what is left and scrolls inside its card -->
   <div class="flex h-full flex-col">
-    <PageHeader title="Sales Reps">
+    <PageHeader title="Sales Reps" :pager="kanbanGroupBy ? null : pager" flush>
       <template #actions>
         <Button v-if="session.isManager" label="New Sales Rep" icon-left="lucide-plus" variant="solid" @click="newRepOpen = true" />
       </template>
+      <template #search>
+        <ListFilters v-model="model" v-model:group-by="groupBy" :groups="view === 'kanban' ? GROUPS : []" search-placeholder="Search name, email, territory" :tabs="tabs" :fields="fields" />
+      </template>
+      <template #views><ViewSwitcher v-model="view" /></template>
     </PageHeader>
-    <div class="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
-      <ListFilters v-model="model" search-placeholder="Search name, email, territory" :tabs="tabs" :fields="fields" />
       <DataTable
+        v-if="view === 'list'"
+        class="min-h-0 flex-1"
+        :sort="sort"
         :columns="columns"
         :rows="list.data || []"
         :loading="list.list.loading"
-        :total="count.data"
-        :has-more="list.hasNextPage"
-        v-model:page-length="pageSize"
         :row-route="(row) => ({ name: 'SalesRep', params: { name: row.name } })"
         empty-icon="lucide-user-round"
         empty-title="No sales reps found"
-        @load-more="list.next()"
       >
         <template #cell-full_name="{ row }">
           <div class="flex items-center gap-2.5">
@@ -40,13 +41,38 @@
           <StatusPill :status="row.active ? 'Active' : 'Inactive'" />
         </template>
       </DataTable>
-    </div>
+      <KanbanView
+        v-else
+        :rows="list.data || []"
+        :loading="list.list.loading"
+        :columns="kanban.columns.value"
+        :row-route="(row) => ({ name: 'SalesRep', params: { name: row.name } })"
+        empty-icon="lucide-user-round"
+        empty-title="No sales reps found"
+        @load-more="kanban.loadMore"
+      >
+        <template #card="{ row }">
+          <div class="flex items-center gap-3">
+            <Avatar :label="row.full_name || row.name" :image="row.user_image" size="xl" />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[14px] font-semibold text-odoo-strong">{{ row.full_name || row.name }}</div>
+              <div class="truncate text-odoo-muted">{{ row.territory || row.name }}</div>
+              <div v-if="row.mobile" class="truncate text-xs text-odoo-muted">{{ row.mobile }}</div>
+            </div>
+            <StatusPill :status="row.active ? 'Active' : 'Inactive'" />
+          </div>
+          <div class="mt-2 flex items-center justify-between gap-2 text-xs text-odoo-muted">
+            <span>{{ stat(row, 'order_value') == null ? '' : `${formatCurrency(stat(row, 'order_value'), undefined, 0)} this month` }}</span>
+            <span>{{ plural(stat(row, 'orders') || 0, 'order') }}</span>
+          </div>
+        </template>
+      </KanbanView>
     <NewSalesRepDialog v-model="newRepOpen" />
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Avatar, Button, createResource } from 'frappe-ui'
 import NewSalesRepDialog from '@/components/NewSalesRepDialog.vue'
 
@@ -57,6 +83,10 @@ import DataTable from '@/components/DataTable.vue'
 import StatusPill from '@/components/StatusPill.vue'
 import Achievement from '@/components/Achievement.vue'
 import { useDocList } from '@/composables/useDocList'
+import ViewSwitcher from '@/components/odoo/ViewSwitcher.vue'
+import KanbanView from '@/components/odoo/KanbanView.vue'
+import { useViewMode } from '@/composables/useViewMode'
+import { useKanbanGroups } from '@/composables/useKanbanGroups'
 import { useSessionStore } from '@/stores/session'
 import { formatCurrency, plural } from '@/utils/format'
 
@@ -69,14 +99,14 @@ const tabs = [
 ]
 const fields = [{ fieldname: 'territory', label: 'Territory', type: 'text' }]
 const columns = [
-  { key: 'full_name', label: 'Sales Rep' },
-  { key: 'territory', label: 'Territory' },
+  { key: 'full_name', label: 'Sales Rep', sortField: 'full_name' },
+  { key: 'territory', label: 'Territory', sortField: 'territory' },
   { key: 'reports_to_name', label: 'Reports To' },
   { key: 'mobile', label: 'Mobile' },
-  { key: 'monthly_target', label: 'Monthly Target', align: 'right', format: (v) => (v ? formatCurrency(v, undefined, 0) : '—') },
+  { key: 'monthly_target', label: 'Monthly Target', sortField: 'monthly_target', sum: true, align: 'right', format: (v) => (v ? formatCurrency(v, undefined, 0) : '—') },
   { key: 'order_value', label: 'This Month', align: 'right' },
   { key: 'achievement', label: 'Achievement', width: '160px' },
-  { key: 'active', label: 'Status' },
+  { key: 'active', label: 'Status', sortField: 'active' },
 ]
 
 function buildFilters(m) {
@@ -87,7 +117,7 @@ function buildFilters(m) {
   return filters
 }
 
-const { model, list, count, pageSize } = useDocList({
+const docList = useDocList({
   doctype: 'Sales Rep',
   fields: ['name', 'full_name', 'user.user_image as user_image', 'territory', 'reports_to', 'reports_to.full_name as reports_to_name', 'mobile', 'monthly_target', 'active'],
   orderBy: 'full_name asc',
@@ -95,6 +125,19 @@ const { model, list, count, pageSize } = useDocList({
   searchFields: ['full_name', 'name', 'territory', 'mobile'],
   initial: { tab: 'active' },
 })
+const { model, list, count, pageSize, pager, sort } = docList
+
+// List or kanban (remembered; phones start in kanban), and the kanban's Group By columns.
+const view = useViewMode('sales-reps')
+const groupBy = ref(null)
+const GROUPS = [
+  { field: 'active', label: 'Status' },
+]
+const GROUP_COLUMNS = {
+  active: [{ value: 1, label: 'Active' }, { value: 0, label: 'Inactive' }],
+}
+const kanbanGroupBy = computed(() => (view.value === 'kanban' ? groupBy.value : null))
+const kanban = useKanbanGroups(docList, kanbanGroupBy, GROUP_COLUMNS)
 
 // Month-to-date numbers for every rep the user can see, keyed by rep.
 const stats = createResource({ url: 'field_sales_odoo.frontend_api.get_rep_month_stats', auto: true })

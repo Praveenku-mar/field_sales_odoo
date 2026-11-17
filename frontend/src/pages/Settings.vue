@@ -1,8 +1,31 @@
 <template>
-  <div>
-    <PageHeader title="Settings">
-      <template #meta>
-        <TabButtons v-model="tab" :options="TABS" />
+  <!-- Odoo's Settings: Save / Discard and "Search settings" in the control panel, the app
+       sections listed on the left, the chosen section's settings blocks on the right. -->
+  <div class="flex h-full flex-col">
+    <PageHeader title="Settings" flush>
+      <template #actions>
+        <template v-if="canEdit && activeForm">
+          <Button
+            variant="solid"
+            label="Save"
+            :loading="activeForm.saving"
+            :disabled="!activeForm.isDirty || activeForm.testing"
+            @click="activeForm.save()"
+          />
+          <Button
+            label="Discard"
+            :disabled="!activeForm.isDirty || activeForm.saving || activeForm.testing"
+            @click="activeForm.discard()"
+          />
+        </template>
+        <Button
+          v-if="canEditStore && tab === 'store'"
+          label="Fetch Locations"
+          icon-left="lucide-refresh-cw"
+          :loading="!!storeForm?.fetchingLocations"
+          :disabled="!storeForm"
+          @click="storeForm?.fetchLocations()"
+        />
         <StatusPill
           v-if="tab === 'store' && storeForm?.titleStatus"
           :status="storeForm.titleStatus.status"
@@ -10,64 +33,69 @@
           :icon="storeForm.titleStatus.icon"
         />
       </template>
-      <template #actions>
+      <template #search>
+        <div class="flex min-h-[32px] items-center gap-2 rounded border border-odoo-line bg-white px-2 focus-within:border-odoo-action">
+          <span class="lucide-search size-4 shrink-0 text-odoo-muted" aria-hidden="true" />
+          <input
+            v-model="query"
+            type="search"
+            class="h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-[14px] text-odoo-strong placeholder:text-odoo-muted focus:ring-0"
+            placeholder="Search settings…"
+            aria-label="Search settings"
+          />
+        </div>
+      </template>
+      <template #views>
         <Button variant="ghost" label="Help" icon-left="lucide-circle-help" href="/help" />
         <Button variant="ghost" label="Privacy" icon-left="lucide-shield" href="/privacy" />
-        <template v-if="canEdit && activeForm?.isDirty">
-          <Button
-            variant="ghost"
-            label="Discard"
-            :disabled="activeForm.saving || activeForm.testing"
-            @click="activeForm.discard()"
-          />
-          <Button
-            variant="solid"
-            label="Save Changes"
-            :loading="activeForm.saving"
-            :disabled="activeForm.testing"
-            @click="activeForm.save()"
-          />
-        </template>
-        <Button
-          v-if="canEditStore && tab === 'store'"
-          :variant="storeForm?.isDirty ? 'subtle' : 'solid'"
-          label="Fetch Locations"
-          icon-left="lucide-refresh-cw"
-          :loading="!!storeForm?.fetchingLocations"
-          :disabled="!storeForm"
-          @click="storeForm?.fetchLocations()"
-        />
       </template>
     </PageHeader>
-    <div class="px-5 pb-5">
-      
-      <MobilePushSettings v-if="tab === 'mobile-push' && canEdit" ref="mobilePushForm" />
-      <!-- Sales Managers may also edit Razorpay; push is System Manager only -->
-      <RazorpaySettings v-else-if="tab === 'razorpay' && canEdit" ref="razorpayForm" />
-      <!-- Inside the Shopify admin the store's managers edit these (merchant fields only) -->
-      <template v-else-if="canEditStore">
-        <!-- v-show keeps unsaved Store Connection edits while another tab is open -->
-        <StoreConnectionForm v-show="tab === 'store'" ref="storeForm" />
-        <InvoiceSettings v-if="tab === 'invoice'" ref="invoiceForm" @saved="refreshStoreForm" />
-        <CommissionSettings v-if="tab === 'commission'" ref="commissionForm" @saved="refreshStoreForm" />
-        <EmailAccountSettings v-if="tab === 'email'" />
-      </template>
-      <div v-else class="fs-card">
+
+    <div class="flex min-h-0 flex-1 flex-col md:flex-row">
+      <!-- App sections (o_settings_tab) -->
+      <nav class="flex shrink-0 overflow-x-auto border-b border-odoo-line bg-white md:w-56 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r" aria-label="Settings sections">
+        <button
+          v-for="t in TABS"
+          :key="t.value"
+          type="button"
+          class="flex shrink-0 items-center gap-2.5 whitespace-nowrap px-4 py-2.5 text-left text-[14px] focus:outline-none focus-visible:bg-odoo-hover"
+          :class="tab === t.value ? 'bg-odoo-hover font-semibold text-odoo-strong md:border-l-[3px] md:border-odoo-action' : 'text-odoo-text hover:bg-[#f2f3f5] md:border-l-[3px] md:border-transparent'"
+          :aria-current="tab === t.value ? 'page' : undefined"
+          @click="tab = t.value"
+        >
+          <span :class="[NOT_ADMIN[t.value].icon, 'size-[18px] text-odoo-primary']" aria-hidden="true" />
+          {{ t.label }}
+        </button>
+      </nav>
+
+      <div ref="pane" class="o-settings min-w-0 flex-1 overflow-y-auto bg-white px-4 py-4 sm:px-8">
+        <p v-if="query && noMatch" class="py-8 text-center text-odoo-muted">No setting in {{ currentLabel }} matches "{{ query }}".</p>
+        <MobilePushSettings v-if="tab === 'mobile-push' && canEdit" ref="mobilePushForm" />
+        <!-- Sales Managers may also edit Razorpay; push is System Manager only -->
+        <RazorpaySettings v-else-if="tab === 'razorpay' && canEdit" ref="razorpayForm" />
+        <!-- Inside the Shopify admin the store's managers edit these (merchant fields only) -->
+        <template v-else-if="canEditStore">
+          <!-- v-show keeps unsaved Store Connection edits while another tab is open -->
+          <StoreConnectionForm v-show="tab === 'store'" ref="storeForm" />
+          <InvoiceSettings v-if="tab === 'invoice'" ref="invoiceForm" @saved="refreshStoreForm" />
+          <CommissionSettings v-if="tab === 'commission'" ref="commissionForm" @saved="refreshStoreForm" />
+          <EmailAccountSettings v-if="tab === 'email'" />
+        </template>
         <EmptyState
+          v-else
           :icon="NOT_ADMIN[tab].icon"
           :title="NOT_ADMIN[tab].title"
           :description="`Only a ${NOT_ADMIN[tab].who || 'System Manager'} can change ${NOT_ADMIN[tab].what}.`"
-        >
-        </EmptyState>
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, TabButtons } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusPill from '@/components/StatusPill.vue'
@@ -89,12 +117,12 @@ const razorpayForm = ref(null)
 const mobilePushForm = ref(null)
 
 const TABS = [
-  { label: 'Store Connection', value: 'store' },
-  { label: 'Invoice', value: 'invoice' },
+  { label: 'Store', value: 'store' },
+  { label: 'Invoicing', value: 'invoice' },
   { label: 'Commission', value: 'commission' },
-  { label: 'Email Account', value: 'email' },
-  { label: 'Razorpay', value: 'razorpay' },
-  { label: 'Notification', value: 'mobile-push' },
+  { label: 'Emails', value: 'email' },
+  { label: 'Payments', value: 'razorpay' },
+  { label: 'Notifications', value: 'mobile-push' },
 ]
 const NOT_ADMIN = {
   store: { icon: 'lucide-store', title: 'Store Connection', what: 'the store connection' },
@@ -125,5 +153,34 @@ const tab = computed({
   get: () => (route.query.tab in NOT_ADMIN ? route.query.tab : 'store'),
   set: (value) => router.replace({ query: value === 'store' ? {} : { tab: value } }),
 })
-</script>
 
+// "Search settings": hide the section's settings blocks that do not mention the words.
+// The forms are untouched; only blocks (each <section>) are shown or hidden.
+const pane = ref(null)
+const query = ref('')
+const noMatch = ref(false)
+const currentLabel = computed(() => TABS.find((t) => t.value === tab.value)?.label || '')
+async function applySearch() {
+  await nextTick()
+  const root = pane.value
+  if (!root) return
+  const words = query.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const sections = [...root.querySelectorAll('section')]
+  let shown = 0
+  for (const section of sections) {
+    const text = section.textContent.toLowerCase()
+    const match = words.every((w) => text.includes(w))
+    section.style.display = match ? '' : 'none'
+    if (match) shown++
+  }
+  noMatch.value = words.length > 0 && sections.length > 0 && shown === 0
+}
+watch([query, tab], applySearch)
+// The sections' forms load after the tab opens: filter what they add while a search is on.
+let observer = null
+onMounted(() => {
+  observer = new MutationObserver(() => query.value.trim() && applySearch())
+  if (pane.value) observer.observe(pane.value, { childList: true, subtree: true })
+})
+onBeforeUnmount(() => observer?.disconnect())
+</script>

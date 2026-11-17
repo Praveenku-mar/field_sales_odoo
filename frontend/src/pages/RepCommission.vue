@@ -1,6 +1,6 @@
 <template>
   <div>
-    <PageHeader title="Rep Commission">
+    <PageHeader title="Rep Commission" :breadcrumbs="[{ label: 'Reports', to: { name: 'Reports' } }]">
       <template #meta>
         <LoadingIndicator v-if="report.loading && report.data" class="size-4 text-ink-gray-5" />
       </template>
@@ -41,8 +41,8 @@
         <NumberCard v-for="i in 8" v-else :key="i" label="" loading />
       </div>
 
-      <!-- Table -->
-      <div class="fs-card overflow-hidden">
+      <!-- Table (Odoo list view look: src/theme/odoo.css .o-list) -->
+      <div class="o-list fs-card overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full text-left">
             <thead>

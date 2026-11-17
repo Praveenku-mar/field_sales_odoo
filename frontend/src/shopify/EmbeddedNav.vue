@@ -1,6 +1,6 @@
 <template>
   <!-- The Shopify admin's sidebar menu for this app (App Bridge <s-app-nav>). Renders nothing
-       in the iframe itself. Same items and visibility rules as AppSidebar (session.canSee). -->
+       in the iframe itself. Same items and visibility rules as the top menu (session.canSee). -->
   <s-app-nav>
     <s-link :href="homeHref" rel="home">Dashboard</s-link>
     <s-link v-for="item in items" :key="item.route" :href="item.href">{{ item.label }}</s-link>
