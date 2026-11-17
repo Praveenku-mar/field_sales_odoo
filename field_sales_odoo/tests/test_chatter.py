@@ -1,12 +1,20 @@
 # Copyright (c) 2026, Your Company and contributors
 # For license information, please see license.txt
 
-"""The record chatter (chatter.py): timeline of notes, changes and messages; Log note."""
+"""
+The record's history (chatter.py): notes, field changes and messages, and Log note. The same
+file runs in every Field Sales edition.
+"""
+
+import importlib
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from field_sales_odoo.chatter import get_chatter, post_note
+APP = __name__.split(".", 1)[0]
+chatter = importlib.import_module(f"{APP}.chatter")
+get_chatter, post_note = chatter.get_chatter, chatter.post_note
+PLATFORM = {"field_sales": "Shopify", "field_sales_woocommerce": "WooCommerce", "field_sales_odoo": "Odoo"}[APP]
 
 
 class TestChatter(IntegrationTestCase):
@@ -15,7 +23,7 @@ class TestChatter(IntegrationTestCase):
 		self.product = frappe.get_doc(
 			{
 				"doctype": "Platform Product",
-				"platform": "Odoo",
+				"platform": PLATFORM,
 				"product_title": "Chatter test product",
 				"external_product_id": "chat-1",
 				"external_variant_id": "chat-1-v",
