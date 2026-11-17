@@ -54,6 +54,8 @@ if TYPE_CHECKING:
 	from frappe.model.document import Document
 
 TIMEOUT = 30
+# Ids per change-polling query (Odoo domains with very long id lists get slow).
+POLL_CHUNK = 500
 PAGE_SIZE = 100
 
 #: The single stock pool reported when the store has no Inventory app.
@@ -607,6 +609,68 @@ class OdooConnector(BaseConnector):
 		if "payment_state" not in orders[0]:
 			financial = "paid" if self._order_has_paid_transaction(int(external_id)) else "pending"
 		return _normalize_order(orders[0], lines, financial)
+
+	# ------------------------------------------------------------------
+	# Change polling: Odoo sends no webhooks, so sync/polling.py asks what changed
+	# ------------------------------------------------------------------
+
+	def get_changed_order_ids(self, order_ids: list, since: str) -> set[str]:
+		"""
+		Of these sale order ids, the ones that changed after ``since`` (UTC, "YYYY-MM-DD HH:MM:SS"):
+		the order itself (state, delivery, lines), one of its invoices (paying an invoice
+		changes the invoice, not the order) or one of its payment transactions (Odoo 18,
+		which has no payment_state on the order).
+		"""
+		ids = sorted({int(i) for i in order_ids if str(i).isdigit()})
+		changed: set[str] = set()
+		# Optional clauses, dropped one by one if this Odoo lacks the field.
+		optional = [
+			("transaction_ids.write_date", ">", since),
+			("order_line.invoice_lines.move_id.write_date", ">", since),
+		]
+		for start in range(0, len(ids), POLL_CHUNK):
+			chunk = ids[start : start + POLL_CHUNK]
+			while True:
+				clauses = [("write_date", ">", since), *optional]
+				domain = [("id", "in", chunk), *(["|"] * (len(clauses) - 1)), *clauses]
+				try:
+					rows = self._search_read("sale.order", domain, ["id"], "Commission")
+					break
+				except ConnectorError as e:
+					if e.code != "BAD_FIELD" or not optional:
+						raise
+					optional.pop(0)
+			changed |= {str(r["id"]) for r in rows}
+		return changed
+
+	def get_changed_product_ids(self, since: str, limit: int = 1000) -> set[str]:
+		"""
+		Product template ids (the ids Platform Product keeps) whose product, variant or stock
+		changed after ``since``. Archived products count: the sync archives them here too.
+		"""
+		any_active = ("active", "in", [True, False])
+		templates = {
+			str(r["id"])
+			for r in self._search_read(
+				"product.template", [("write_date", ">", since), any_active], ["id"], "Product Sync", limit=limit
+			)
+		}
+		variants = self._search_read(
+			"product.product", [("write_date", ">", since), any_active], ["product_tmpl_id"], "Product Sync", limit=limit
+		)
+		templates |= {str(r["product_tmpl_id"][0]) for r in variants if r.get("product_tmpl_id")}
+		# Stock moves change stock.quant, not the product.
+		try:
+			quants = self._search_read("stock.quant", [("write_date", ">", since)], ["product_id"], "Stock Check", limit=limit)
+		except ConnectorError as e:
+			if e.code not in ("NOT_FOUND", "BAD_FIELD"):  # no Inventory app: no stock to follow
+				raise
+			quants = []
+		product_ids = sorted({r["product_id"][0] for r in quants if r.get("product_id")})
+		if product_ids:
+			rows = self._read("product.product", product_ids, ["product_tmpl_id"], "Stock Check")
+			templates |= {str(r["product_tmpl_id"][0]) for r in rows if r.get("product_tmpl_id")}
+		return templates
 
 	# ------------------------------------------------------------------
 	# Webhooks (unsupported; see the module docstring)
