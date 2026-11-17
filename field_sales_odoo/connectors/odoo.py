@@ -54,6 +54,8 @@ if TYPE_CHECKING:
 	from frappe.model.document import Document
 
 TIMEOUT = 30
+# Ids per change-polling query (Odoo domains with very long id lists get slow).
+POLL_CHUNK = 500
 PAGE_SIZE = 100
 
 #: The single stock pool reported when the store has no Inventory app.
@@ -444,11 +446,82 @@ class OdooConnector(BaseConnector):
 					partial={"draft_id": str(order_id)}) from e
 
 		name = self._read("sale.order", [order_id], ["name"], operation, ref=field_order)[0]["name"]
+		# The customer portal's page for the order: the shop can accept and pay it there, with
+		# the payment methods the Odoo store offers (the app's "Pay in Store Checkout").
+		checkout_url = self._portal_url(order_id, field_order)
 		if confirmed:
 			return {"draft_id": None, "draft_name": None,
-				"order_id": str(order_id), "order_name": name, "checkout_url": None}
+				"order_id": str(order_id), "order_name": name, "checkout_url": checkout_url}
 		return {"draft_id": str(order_id), "draft_name": name,
-			"order_id": None, "order_name": None, "checkout_url": None}
+			"order_id": None, "order_name": None, "checkout_url": checkout_url}
+
+	def _portal_url(self, order_id: int, field_order: Document | None = None) -> str | None:
+		"""``/my/orders/<id>?access_token=…`` as an https URL, or None (no portal, or plain http)."""
+		try:
+			path = self._execute_kw("sale.order", "get_portal_url", [[order_id]], "Create Order", ref=field_order)
+		except ConnectorError:
+			return None  # the store's Odoo does not expose it; the app simply offers no store link
+		if not isinstance(path, str) or not path.startswith("/"):
+			return None
+		url = f"{self.base_url}{path}"
+		return url if url.startswith("https://") else None
+
+	def get_store_payment(self, external_order_id: str) -> dict | None:
+		"""
+		Paid on Odoo: what is paid on the order's posted customer invoices (credit notes taken
+		off); with no invoice payment (or no Invoicing app), a done payment transaction.
+		"""
+		if not str(external_order_id or "").isdigit():
+			return None
+		order_id = int(external_order_id)
+		orders = self._read("sale.order", [order_id], ["state", "currency_id", "invoice_ids"], "Commission")
+		if not orders or orders[0].get("state") == "cancel":
+			return None
+		order = orders[0]
+		currency = order["currency_id"][1] if isinstance(order.get("currency_id"), list) else None
+
+		paid, paid_at, reference = 0.0, None, None
+		invoice_ids = order.get("invoice_ids") or []
+		if invoice_ids:
+			moves = self._read(
+				"account.move", invoice_ids,
+				["state", "move_type", "payment_state", "amount_total", "amount_residual", "name", "write_date"],
+				"Commission",
+			)
+			for move in moves:
+				if move.get("state") != "posted" or move.get("payment_state") not in ("paid", "in_payment", "partial"):
+					continue
+				settled = frappe.utils.flt(move.get("amount_total")) - frappe.utils.flt(move.get("amount_residual"))
+				if move.get("move_type") == "out_refund":
+					paid -= settled
+				elif move.get("move_type") == "out_invoice":
+					paid += settled
+					reference = move.get("name") or reference
+					paid_at = max(filter(None, [paid_at, move.get("write_date")]), default=None)
+		if paid > 0:
+			return {"amount": paid, "currency": currency, "method": "Invoice", "reference": reference, "paid_at": paid_at}
+
+		for tx in self._done_transactions(order_id):
+			paid += frappe.utils.flt(tx.get("amount"))
+			reference = tx.get("reference") or reference
+			paid_at = max(filter(None, [paid_at, tx.get("last_state_change")]), default=None)
+		if paid > 0:
+			return {"amount": paid, "currency": currency, "method": "Online payment", "reference": reference, "paid_at": paid_at}
+		return None
+
+	def _done_transactions(self, order_id: int) -> list[dict]:
+		"""The order's done payment transactions; none without the payment app."""
+		try:
+			return self._search_read(
+				"payment.transaction",
+				[("sale_order_ids", "in", [order_id]), ("state", "=", "done")],
+				["amount", "reference", "last_state_change"],
+				"Commission",
+			)
+		except ConnectorError as e:
+			if e.code in ("NOT_FOUND", "BAD_FIELD"):
+				return []
+			raise
 
 	def _find_order_by_ref(self, field_order: Document, operation: str) -> int | None:
 		"""The draft a failed earlier attempt left behind, matched by our order no."""
@@ -607,6 +680,68 @@ class OdooConnector(BaseConnector):
 		if "payment_state" not in orders[0]:
 			financial = "paid" if self._order_has_paid_transaction(int(external_id)) else "pending"
 		return _normalize_order(orders[0], lines, financial)
+
+	# ------------------------------------------------------------------
+	# Change polling: Odoo sends no webhooks, so sync/polling.py asks what changed
+	# ------------------------------------------------------------------
+
+	def get_changed_order_ids(self, order_ids: list, since: str) -> set[str]:
+		"""
+		Of these sale order ids, the ones that changed after ``since`` (UTC, "YYYY-MM-DD HH:MM:SS"):
+		the order itself (state, delivery, lines), one of its invoices (paying an invoice
+		changes the invoice, not the order) or one of its payment transactions (Odoo 18,
+		which has no payment_state on the order).
+		"""
+		ids = sorted({int(i) for i in order_ids if str(i).isdigit()})
+		changed: set[str] = set()
+		# Optional clauses, dropped one by one if this Odoo lacks the field.
+		optional = [
+			("transaction_ids.write_date", ">", since),
+			("order_line.invoice_lines.move_id.write_date", ">", since),
+		]
+		for start in range(0, len(ids), POLL_CHUNK):
+			chunk = ids[start : start + POLL_CHUNK]
+			while True:
+				clauses = [("write_date", ">", since), *optional]
+				domain = [("id", "in", chunk), *(["|"] * (len(clauses) - 1)), *clauses]
+				try:
+					rows = self._search_read("sale.order", domain, ["id"], "Commission")
+					break
+				except ConnectorError as e:
+					if e.code != "BAD_FIELD" or not optional:
+						raise
+					optional.pop(0)
+			changed |= {str(r["id"]) for r in rows}
+		return changed
+
+	def get_changed_product_ids(self, since: str, limit: int = 1000) -> set[str]:
+		"""
+		Product template ids (the ids Platform Product keeps) whose product, variant or stock
+		changed after ``since``. Archived products count: the sync archives them here too.
+		"""
+		any_active = ("active", "in", [True, False])
+		templates = {
+			str(r["id"])
+			for r in self._search_read(
+				"product.template", [("write_date", ">", since), any_active], ["id"], "Product Sync", limit=limit
+			)
+		}
+		variants = self._search_read(
+			"product.product", [("write_date", ">", since), any_active], ["product_tmpl_id"], "Product Sync", limit=limit
+		)
+		templates |= {str(r["product_tmpl_id"][0]) for r in variants if r.get("product_tmpl_id")}
+		# Stock moves change stock.quant, not the product.
+		try:
+			quants = self._search_read("stock.quant", [("write_date", ">", since)], ["product_id"], "Stock Check", limit=limit)
+		except ConnectorError as e:
+			if e.code not in ("NOT_FOUND", "BAD_FIELD"):  # no Inventory app: no stock to follow
+				raise
+			quants = []
+		product_ids = sorted({r["product_id"][0] for r in quants if r.get("product_id")})
+		if product_ids:
+			rows = self._read("product.product", product_ids, ["product_tmpl_id"], "Stock Check")
+			templates |= {str(r["product_tmpl_id"][0]) for r in rows if r.get("product_tmpl_id")}
+		return templates
 
 	# ------------------------------------------------------------------
 	# Webhooks (unsupported; see the module docstring)
