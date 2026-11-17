@@ -33,6 +33,7 @@ Mappings worth knowing:
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -367,6 +368,35 @@ class OdooConnector(BaseConnector):
 			[("sale_ok", "=", True)], "Product Sync", limit=PAGE_SIZE, offset=offset
 		)
 		items = [item for row in rows if (item := self._normalize_product(row))]
+		next_cursor = str(offset + PAGE_SIZE) if len(rows) == PAGE_SIZE else None
+		return {"items": items, "next_cursor": next_cursor}
+
+	def get_customers(self, cursor: str | None = None) -> dict:
+		"""
+		One page of Odoo customers: top-level partners (not a company's contacts) that are
+		customers (``customer_rank`` > 0; every partner where the store has no Invoicing app).
+		"""
+		offset = int(cursor or 0)
+		fields = ["id", "name", "is_company", "email", *PARTNER_OPTIONAL_FIELDS, "street", "street2",
+			"city", "state_id", "zip"]
+		domain = [("parent_id", "=", False), ("customer_rank", ">", 0)]
+		while True:
+			try:
+				rows = self._search_read("res.partner", domain, fields, "Customer Sync",
+					limit=PAGE_SIZE, offset=offset)
+				break
+			except ConnectorError as e:
+				if e.code != "BAD_FIELD":
+					raise
+				missing = _invalid_field(e.message)
+				if missing in PARTNER_OPTIONAL_FIELDS and missing in fields:
+					# Not on this Odoo version (e.g. Odoo 18 has no mobile), so read without it.
+					fields.remove(missing)
+				elif missing == "customer_rank" and len(domain) > 1:
+					domain = domain[:1]  # no Invoicing app: no customer rank
+				else:
+					raise
+		items = [_normalize_partner(row) for row in rows]
 		next_cursor = str(offset + PAGE_SIZE) if len(rows) == PAGE_SIZE else None
 		return {"items": items, "next_cursor": next_cursor}
 
@@ -849,6 +879,43 @@ def _partner_values(retailer: Document, email: str, country_id=False, state_id=F
 		"country_id": country_id,
 		"state_id": state_id,
 		"customer_rank": 1,
+	}
+
+
+# Partner fields some Odoo versions lack: Odoo 18 dropped mobile, older ones the related
+# country code. get_customers reads without the one Odoo names as invalid.
+PARTNER_OPTIONAL_FIELDS = ("phone", "mobile", "country_code")
+
+
+def _invalid_field(message: str | None) -> str | None:
+	"""The field named in Odoo's "Invalid field 'mobile' on 'res.partner'" (or similar)."""
+	match = re.search(r"(?:invalid|unknown) field[^'\"]*['\"]([\w.]+)['\"]", message or "", re.IGNORECASE)
+	return match.group(1) if match else None
+
+
+def _normalize_partner(row: dict) -> dict:
+	"""An Odoo partner as the connector's normalized customer dict."""
+
+	def clean(value) -> str | None:
+		return value.strip() if isinstance(value, str) and value.strip() else None
+
+	name = clean(row.get("name")) or ""
+	state = row.get("state_id")[1] if isinstance(row.get("state_id"), list) else None
+	return {
+		"external_customer_id": str(row.get("id")),
+		"email": clean(row.get("email")),
+		# A company is the shop; a person is named after themselves.
+		"first_name": "" if row.get("is_company") else name,
+		"last_name": "",
+		"company": name if row.get("is_company") else None,
+		"phone": clean(row.get("phone")) or clean(row.get("mobile")),
+		"address_line1": clean(row.get("street")),
+		"address_line2": clean(row.get("street2")),
+		"city": clean(row.get("city")),
+		# Odoo shows a state as "Tamil Nadu (IN)".
+		"state": re.sub(r"\s*\([A-Z]{2}\)$", "", state) if state else None,
+		"pincode": clean(row.get("zip")),
+		"country_code": (clean(row.get("country_code")) or "").upper() or None,
 	}
 
 

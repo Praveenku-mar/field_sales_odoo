@@ -30,7 +30,7 @@ from field_sales_odoo.permissions import (
 	is_manager_or_admin,
 	visit_query,
 )
-from field_sales_odoo.sync.customers import push_retailers
+from field_sales_odoo.sync.customers import enqueue_import, push_retailers
 from field_sales_odoo.sync.notify import MONITOR_ROLES
 from field_sales_odoo.sync.orders import enqueue_push_order
 from field_sales_odoo.sync.products import enqueue_sync
@@ -136,6 +136,17 @@ def enqueue_product_sync() -> dict:
 	if enqueue_sync():
 		return {"queued": True, "message": _("Sync started")}
 	return {"queued": False, "message": _("A product sync is already running")}
+
+
+@frappe.whitelist(methods=["POST"])
+def enqueue_customer_import() -> dict:
+	"""Queue an import of the store's customers as Retailers (``sync.customers.import_customers``)."""
+	frappe.only_for(["System Manager", "Sales Manager"])
+
+	get_connector()  # fails fast if Store Connection is disabled
+	if enqueue_import():
+		return {"queued": True, "message": _("Customer import started")}
+	return {"queued": False, "message": _("A customer import is already running")}
 
 
 @frappe.whitelist(methods=["POST"])
