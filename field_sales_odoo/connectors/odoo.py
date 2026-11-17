@@ -76,6 +76,8 @@ class OdooConnector(BaseConnector):
 		super().__init__(settings)
 		self.base_url = self.normalize_store_url(settings.store_url).rstrip("/")
 		self.rpc_url = f"{self.base_url}/jsonrpc"
+		#: None = not asked yet; the optional partner fields this Odoo has (get_customers)
+		self._partner_field_names: set[str] | None = None
 		self.database = (settings.odoo_database or "").strip()
 		self.username = (settings.odoo_username or "").strip()
 		# The loaded single holds the masked dummy for a saved key; get_password
@@ -375,30 +377,30 @@ class OdooConnector(BaseConnector):
 		"""
 		One page of Odoo customers: top-level partners (not a company's contacts) that are
 		customers (``customer_rank`` > 0; every partner where the store has no Invoicing app).
+		Only the partner fields this Odoo has are asked for (Odoo 18 has no ``mobile``), so no
+		request fails on a missing field.
 		"""
 		offset = int(cursor or 0)
-		fields = ["id", "name", "is_company", "email", *PARTNER_OPTIONAL_FIELDS, "street", "street2",
-			"city", "state_id", "zip"]
-		domain = [("parent_id", "=", False), ("customer_rank", ">", 0)]
-		while True:
-			try:
-				rows = self._search_read("res.partner", domain, fields, "Customer Sync",
-					limit=PAGE_SIZE, offset=offset)
-				break
-			except ConnectorError as e:
-				if e.code != "BAD_FIELD":
-					raise
-				missing = _invalid_field(e.message)
-				if missing in PARTNER_OPTIONAL_FIELDS and missing in fields:
-					# Not on this Odoo version (e.g. Odoo 18 has no mobile), so read without it.
-					fields.remove(missing)
-				elif missing == "customer_rank" and len(domain) > 1:
-					domain = domain[:1]  # no Invoicing app: no customer rank
-				else:
-					raise
+		available = self._partner_fields()
+		fields = ["id", "name", "is_company", "email", "street", "street2", "city", "state_id", "zip"]
+		fields += [f for f in PARTNER_OPTIONAL_FIELDS if f in available]
+		domain = [("parent_id", "=", False)]
+		if "customer_rank" in available:
+			domain.append(("customer_rank", ">", 0))
+		rows = self._search_read("res.partner", domain, fields, "Customer Sync", limit=PAGE_SIZE, offset=offset)
 		items = [_normalize_partner(row) for row in rows]
 		next_cursor = str(offset + PAGE_SIZE) if len(rows) == PAGE_SIZE else None
 		return {"items": items, "next_cursor": next_cursor}
+
+	def _partner_fields(self) -> set[str]:
+		"""Which optional res.partner fields this Odoo has (asked once per connector)."""
+		if self._partner_field_names is None:
+			found = self._execute_kw(
+				"res.partner", "fields_get", [[*PARTNER_OPTIONAL_FIELDS, "customer_rank"]], "Customer Sync",
+				kwargs={"attributes": ["type"]},
+			)
+			self._partner_field_names = set(found) if isinstance(found, dict) else set()
+		return self._partner_field_names
 
 	def get_product(self, external_product_id: str) -> list[dict]:
 		try:
@@ -883,14 +885,8 @@ def _partner_values(retailer: Document, email: str, country_id=False, state_id=F
 
 
 # Partner fields some Odoo versions lack: Odoo 18 dropped mobile, older ones the related
-# country code. get_customers reads without the one Odoo names as invalid.
+# country code. get_customers asks Odoo which of them it has (fields_get) and reads only those.
 PARTNER_OPTIONAL_FIELDS = ("phone", "mobile", "country_code")
-
-
-def _invalid_field(message: str | None) -> str | None:
-	"""The field named in Odoo's "Invalid field 'mobile' on 'res.partner'" (or similar)."""
-	match = re.search(r"(?:invalid|unknown) field[^'\"]*['\"]([\w.]+)['\"]", message or "", re.IGNORECASE)
-	return match.group(1) if match else None
 
 
 def _normalize_partner(row: dict) -> dict:

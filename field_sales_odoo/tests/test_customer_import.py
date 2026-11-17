@@ -132,43 +132,43 @@ class TestCustomerImport(IntegrationTestCase):
 
 
 class TestOdooCustomers(IntegrationTestCase):
-	def test_page_mapping_and_fallbacks(self):
-		from field_sales_odoo.connectors.base import ConnectorError
+	ROWS = [
+		{"id": 9, "name": "Murugan Stores", "is_company": True, "email": "m@example.com", "phone": "98765 43210", "street": "1 Main Rd", "street2": False, "city": "Salem", "state_id": [5, "Tamil Nadu (IN)"], "zip": "636001"},
+		{"id": 10, "name": "Asha M", "is_company": False, "email": False, "phone": "+91 99999 00000", "street": False, "street2": False, "city": False, "state_id": False, "zip": False},
+	]
+
+	def read(self, has):
+		"""get_customers on an Odoo whose res.partner has the optional fields in ``has``."""
 		from field_sales_odoo.tests.test_odoo_connector import make_connector
 
 		conn = make_connector()
-		calls = []
-
-		def fake(model, domain, fields, operation, **kwargs):
-			calls.append((domain, list(fields)))
-			# Odoo 18 has no mobile; an old Odoo no related country code; no Invoicing app no rank.
-			if "mobile" in fields:
-				raise ConnectorError("Invalid field 'mobile' on 'res.partner'", code="BAD_FIELD")
-			if "country_code" in fields:
-				raise ConnectorError("Invalid field 'country_code' on 'res.partner'", code="BAD_FIELD")
-			if ("customer_rank", ">", 0) in domain:
-				raise ConnectorError("Invalid field 'customer_rank' in leaf ('customer_rank', '>', 0)", code="BAD_FIELD")
-			return [
-				{"id": 9, "name": "Murugan Stores", "is_company": True, "email": "m@example.com", "phone": "98765 43210", "street": "1 Main Rd", "street2": False, "city": "Salem", "state_id": [5, "Tamil Nadu (IN)"], "zip": "636001"},
-				{"id": 10, "name": "Asha M", "is_company": False, "email": False, "phone": "+91 99999 00000", "mobile": False, "street": False, "street2": False, "city": False, "state_id": False, "zip": False},
-			]
-
-		with patch.object(conn, "_search_read", side_effect=fake):
+		with patch.object(conn, "_execute_kw", return_value={f: {"type": "char"} for f in has}) as fields_get, patch.object(
+			conn, "_search_read", return_value=self.ROWS
+		) as search:
 			page = conn.get_customers(None)
-		# Read without each field Odoo named, then without the customer rank.
-		self.assertEqual(calls[-1][0], [("parent_id", "=", False)])
-		self.assertNotIn("mobile", calls[-1][1])
-		self.assertNotIn("country_code", calls[-1][1])
-		self.assertIn("phone", calls[-1][1])
+			conn.get_customers("100")  # asked once per connector
+		self.assertEqual(fields_get.call_count, 1)
+		return page, search.call_args_list[0].args
+
+	def test_odoo_18_without_mobile_asks_only_for_existing_fields(self):
+		page, (model, domain, fields, operation) = self.read({"phone", "country_code", "customer_rank"})
+		self.assertEqual(model, "res.partner")
+		self.assertNotIn("mobile", fields)
+		self.assertIn("phone", fields)
+		self.assertEqual(domain, [("parent_id", "=", False), ("customer_rank", ">", 0)])
 		self.assertIsNone(page["next_cursor"])
 		shop, person = page["items"]
 		self.assertEqual((shop["company"], shop["first_name"], shop["phone"], shop["state"]), ("Murugan Stores", "", "98765 43210", "Tamil Nadu"))
 		self.assertEqual((person["company"], person["first_name"], person["email"]), (None, "Asha M", None))
 
-	def test_other_invalid_fields_are_not_hidden(self):
-		from field_sales_odoo.connectors.base import ConnectorError
-		from field_sales_odoo.tests.test_odoo_connector import make_connector
+	def test_no_invoicing_app_and_older_odoo(self):
+		_page, (_model, domain, fields, _op) = self.read({"phone", "mobile"})
+		# No customer rank without Invoicing: every top-level partner; no related country code.
+		self.assertEqual(domain, [("parent_id", "=", False)])
+		self.assertIn("mobile", fields)
+		self.assertNotIn("country_code", fields)
 
-		conn = make_connector()
-		with patch.object(conn, "_search_read", side_effect=ConnectorError("Invalid field 'name' on 'res.partner'", code="BAD_FIELD")):
-			self.assertRaises(ConnectorError, conn.get_customers, None)
+	def test_mobile_is_used_when_there_is_no_phone(self):
+		from field_sales_odoo.connectors.odoo import _normalize_partner
+
+		self.assertEqual(_normalize_partner({"id": 1, "name": "X", "phone": False, "mobile": "98765 43210"})["phone"], "98765 43210")
