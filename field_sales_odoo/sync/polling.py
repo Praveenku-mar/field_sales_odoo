@@ -31,6 +31,7 @@ from field_sales_odoo.connectors import ConnectorError, get_connector
 from field_sales_odoo.field_sales_odoo.doctype.sync_log.sync_log import log_sync, log_sync_durable
 from field_sales_odoo.payments.store_payments import apply_store_payment
 from field_sales_odoo.sync.products import sync_one_product
+from field_sales_odoo.utils.db import safe_commit
 
 ORDERS_MARK = "field_sales_odoo_orders_checked_until"
 PRODUCTS_MARK = "field_sales_odoo_products_checked_until"
@@ -74,7 +75,7 @@ def _run(mark: str, operation: str, fetch, apply) -> dict:
 	for external_id in ids[:MAX_PER_RUN]:
 		try:
 			apply(external_id)
-			frappe.db.commit()
+			safe_commit()
 			done += 1
 		except Exception:
 			frappe.db.rollback()
@@ -82,7 +83,7 @@ def _run(mark: str, operation: str, fetch, apply) -> dict:
 			frappe.log_error(title=f"Odoo change polling failed: {operation} {external_id}")
 	# Over the cap, the rest wait for the next full product sync / a later change.
 	frappe.db.set_default(mark, started.strftime(ODOO_TIME))
-	frappe.db.commit()
+	safe_commit()
 	if ids:
 		log_sync(
 			platform="Odoo",
@@ -92,7 +93,7 @@ def _run(mark: str, operation: str, fetch, apply) -> dict:
 				{"changed": len(ids), "applied": done, "failed": failed, "skipped": max(0, len(ids) - MAX_PER_RUN)}
 			),
 		)
-		frappe.db.commit()
+		safe_commit()
 	return {"changed": len(ids), "applied": done, "failed": failed}
 
 
