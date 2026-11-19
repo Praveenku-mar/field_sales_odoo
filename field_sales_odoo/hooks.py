@@ -99,3 +99,6 @@ scheduler_events = {
 		],
 	},
 }
+
+# Installation: setup a fresh site needs that existing sites got from patches.
+after_install = "field_sales_odoo.install.after_install"
